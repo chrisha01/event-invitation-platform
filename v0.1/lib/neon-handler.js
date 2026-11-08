@@ -727,7 +727,7 @@ async function createHandler({ sql, env = process.env }) {
     if (guestMatch) {
       const tokenHash = sha256(guestMatch[1]);
       const rows = await query`SELECT g.*,e.title,e.event_date,e.event_start_time,e.event_end_time,e.event_timezone,
-        e.location,e.guest_mode,e.rsvp_deadline,e.capacity,
+        e.location,e.guest_mode,e.rsvp_deadline,e.responses_open,e.reopened_at,e.capacity,
         e.published,e.status,e.status_note,e.theme_json,e.invitation_settings_json,e.invitation_copy_json,
         r.answer,r.party_size,r.updated_at,
         COALESCE(jsonb_agg(jsonb_build_object('id',a.id,'name',a.name)
@@ -737,6 +737,9 @@ async function createHandler({ sql, env = process.env }) {
         WHERE g.token_hash=${tokenHash} GROUP BY g.id,e.id,r.id`;
       const guest = rows[0];
       if (!guest || guest.revoked_at || !guest.published) throw error('This invitation link is invalid or has been revoked.', 404);
+      const deadlinePassed = guest.rsvp_deadline && new Date(guest.rsvp_deadline).getTime() <= Date.now();
+      const canRespond = guest.status !== 'cancelled' && Boolean(guest.responses_open) &&
+        (!deadlinePassed || Boolean(guest.reopened_at));
       if (method === 'GET') return response(200, { event: {
         title: guest.title, eventDate: String(guest.event_date).slice(0,10), location: guest.location,
         status: guest.status || 'active', statusNote: guest.status_note || null,
@@ -746,11 +749,11 @@ async function createHandler({ sql, env = process.env }) {
         invitationCopy: guest.invitation_copy_json || {}
       }, guest: { name: guest.name, partyLimit: Number(guest.party_limit), answer: guest.answer || null,
         partySize: guest.party_size === null ? null : Number(guest.party_size), attendees: guest.attendees || [] },
-      canRespond: Boolean(guest.responses_open) });
+      canRespond });
       if (method === 'PUT') {
         if (guest.status === 'cancelled') throw error('Cancelled events cannot accept RSVP changes.', 409);
         if (!guest.responses_open) throw error('RSVP responses are currently closed.', 409);
-        if (guest.rsvp_deadline && new Date(guest.rsvp_deadline).getTime() <= Date.now()) {
+        if (deadlinePassed && !guest.reopened_at) {
           throw error('The RSVP deadline has passed.', 409);
         }
         if (guest.guest_mode === 'individual' && input.partySize > 1) throw error('Individual invitations can only have one attendee.');
