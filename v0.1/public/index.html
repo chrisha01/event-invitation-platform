@@ -6,9 +6,12 @@
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#f8f6f1">
   <meta name="description" content="Gatherly local event invitations and RSVP workspace.">
+  <!-- Netlify deployments can point this at /.netlify/functions/api without changing the UI. -->
+  <meta name="gatherly-api-base" content="/api">
+  <base href="/">
   <title>Gatherly — Local RSVP workspace</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script src="/app.js" defer></script>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
 </head>
 <body>
   <header class="site-header" id="site-header">

@@ -1,7 +1,13 @@
 'use strict';
 
 const $ = (selector, root = document) => root.querySelector(selector);
-const token = location.pathname.match(/^\/rsvp\/([^/]+)$/)?.[1];
+const routeToken = (location.pathname.match(/^\/rsvp\/([^/]+)$/) || [])[1]
+  || (String(location.hash || '').match(/^#rsvp\/([^/]+)$/) || [])[1];
+const configuredApiBase = (typeof window !== 'undefined' && window.GATHERLY_API_BASE)
+  || (typeof document !== 'undefined' && document.querySelector('meta[name="gatherly-api-base"]')?.content)
+  || '/api';
+const API_BASE = String(configuredApiBase).replace(/\/+$/, '') || '/api';
+const token = routeToken;
 
 let eventsCache = [];
 let currentEventId = null;
@@ -421,12 +427,26 @@ function mountInvitationPreview(preview, event) {
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, {
-    credentials: 'same-origin',
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
-  });
-  const result = await response.json().catch(() => ({}));
+  const requestUrl = url.startsWith('/api/')
+    ? (API_BASE === '/api' ? url : `${API_BASE}${url.slice(4)}`)
+    : url;
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !(typeof FormData !== 'undefined' && options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  let response;
+  try {
+    response = await fetch(requestUrl, {
+      credentials: 'include',
+      ...options,
+      headers
+    });
+  } catch {
+    throw new Error('Unable to reach Gatherly. Check your connection and try again.');
+  }
+  const result = typeof response.json === 'function'
+    ? await response.json().catch(() => ({}))
+    : {};
   if (!response.ok) {
     const error = new Error(result.error || `Request failed (${response.status})`);
     error.status = response.status;
@@ -434,6 +454,38 @@ async function api(url, options = {}) {
     throw error;
   }
   return result;
+}
+
+async function downloadFile(url, filename) {
+  const requestUrl = url.startsWith('/api/')
+    ? (API_BASE === '/api' ? url : `${API_BASE}${url.slice(4)}`)
+    : url;
+  let response;
+  try {
+    response = await fetch(requestUrl, { credentials: 'include' });
+  } catch {
+    throw new Error('Unable to download the file. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    const contentType = response.headers?.get?.('content-type') || '';
+    const result = contentType.includes('json') ? await response.json().catch(() => ({})) : {};
+    throw new Error(result.error || `Download failed (${response.status})`);
+  }
+  const blob = await response.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  URL.revokeObjectURL(link.href);
+  link.remove();
+}
+
+function publicUrl(path) {
+  const base = document.baseURI || location.href;
+  if (base) return new URL(path, base).href;
+  return `${location.origin || ''}${path}`;
 }
 
 function formValues(form) {
@@ -876,17 +928,24 @@ async function loadEvents() {
     populateTimezoneSelect($('#event-form [name=timezone]'), null);
     $('.export', card).addEventListener('click', () => {
       if (event.status === 'cancelled') return;
-      location.href = `/api/events/${event.id}/export`;
+      downloadFile(`/api/events/${event.id}/export`, `gatherly-event-${event.id}-guests.csv`)
+        .catch((error) => showMessage($('#global-message'), error.message, true));
     });
     $('.print', card).addEventListener('click', async () => {
       if (event.status === 'cancelled') return;
-      await renderDashboard(event, card);
-      const printView = $('.print-view', card);
-      printView.hidden = false;
-      card.classList.add('is-printing');
-      window.print();
-      card.classList.remove('is-printing');
-      printView.hidden = true;
+      try {
+        await renderDashboard(event, card);
+        const printView = $('.print-view', card);
+        printView.hidden = false;
+        card.classList.add('is-printing');
+        window.print();
+      } catch (error) {
+        showMessage($('#global-message'), error.message, true);
+      } finally {
+        const printView = $('.print-view', card);
+        card.classList.remove('is-printing');
+        if (printView) printView.hidden = true;
+      }
     });
     if (event.capacity !== null && event.capacity !== undefined) {
       $('.event-meta', card).textContent += ` · capacity ${event.capacity}`;
@@ -1236,8 +1295,8 @@ function setupSeating(event, card) {
       setTimeout(cleanup, 1000);
     };
     [['Print plan', printPlan], ['Share plan', async () => {
-      try { await copyText(`${location.origin}${location.pathname}#event-${event.id}/seating`); showMessage('Seating plan link copied.'); }
-      catch (error) { showMessage(error.message, true); }
+      try { await copyText(publicUrl(`#event-${event.id}/seating`)); showToast('Seating plan link copied.'); }
+      catch (error) { showMessage($('#global-message'), error.message, true); }
     }]].forEach(([text, action]) => {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'secondary'; button.textContent = text;
@@ -2376,7 +2435,7 @@ async function renderDashboard(event, card) {
           return;
         }
         try {
-          await copyText(`${location.origin}${inviteUrl}`);
+          await copyText(publicUrl(inviteUrl));
           showToast(`${guest.name}'s invitation link copied.`);
         } catch {
           showToast(`Could not copy ${guest.name}'s link. Check clipboard permissions and try again.`);
@@ -2432,7 +2491,7 @@ function createInviteLinkCollection(guests) {
     email.textContent = guest.email;
     identity.append(name, email);
     const link = document.createElement('a');
-    link.href = `${location.origin}${guest.inviteUrl}`;
+    link.href = publicUrl(guest.inviteUrl);
     link.textContent = 'Open link';
     link.className = 'invite-link-collection__url';
     const copy = document.createElement('button');

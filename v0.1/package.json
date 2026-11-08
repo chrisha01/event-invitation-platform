@@ -8,6 +8,10 @@
     "test": "node --test",
     "reset": "node reset.js"
   },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "serverless-http": "^3.2.0"
+  },
   "engines": {
     "node": ">=24.0.0"
   }

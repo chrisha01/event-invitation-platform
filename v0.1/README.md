@@ -1,5 +1,14 @@
 # Gatherly v0.1 — local shared RSVP slice
 
+## Hosted migration
+
+The local SQLite store and its API contracts remain unchanged. Hosted
+deployments use `lib/neon-handler.js` with the reusable Neon adapter in
+`lib/neon.js`, the idempotent PostgreSQL baseline in
+`migrations/001_initial.sql`, and the Netlify Function at
+`netlify/functions/api.js`. Set `DATABASE_URL` to a `postgres://` or
+`postgresql://` URL in Netlify; local development does not require it.
+
 This runnable vertical slice is isolated from the public static demo in the repository root.
 It uses Node.js built-ins and SQLite; there are no external services or dependencies.
 

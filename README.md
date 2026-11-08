@@ -42,3 +42,12 @@ Guests can revise their RSVP through their invitation link, subject to the deadl
 ## Product caveats
 
 Gatherly is a working brand name for the concept. Product scope, pricing, dates, locations, and sample guest data are placeholders. In the root static demo, the guest invitation and RSVP are for client presentation only: there is no account authentication, real invitation delivery, messaging, or shared RSVP backend. Responses exist only in the same browser and site origin where they were entered, so they cannot be viewed by another visitor. The separate v0.1 prototype has local host authentication and locally persisted workflows, but is not production-ready.
+
+## Netlify deployment scaffold
+
+The repository includes Netlify configuration for the static root site and a
+production-safe Functions/Neon integration point. See
+[`NETLIFY.md`](./NETLIFY.md) for required environment variables, Neon setup,
+API redirects, and the backend adapter contract. The Function uses the hosted
+Neon-backed v0.1 API handler; the local SQLite prototype is never used by
+Netlify.
