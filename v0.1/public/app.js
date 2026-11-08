@@ -303,10 +303,17 @@ function setThemePreview(preview, theme) {
 }
 
 function formatInvitationDate(value) {
-  const [year, month, day] = value.split('-').map(Number);
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return 'Date unavailable';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day) return 'Date unavailable';
   return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-  }).format(new Date(year, month - 1, day));
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  }).format(date);
 }
 
 function formatEventSchedule(event) {
@@ -320,6 +327,11 @@ function formatEventSchedule(event) {
     ? event.replacementTimezone : event.timezone;
   const date = formatInvitationDate(dateValue);
   if (!startValue) return date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || '')) ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(startValue)) ||
+      (endValue && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(endValue)))) {
+    return date;
+  }
   const time = (value) => new Intl.DateTimeFormat(undefined, {
     hour: 'numeric', minute: '2-digit', ...(timezoneValue ? { timeZone: timezoneValue } : {})
   }).format(new Date(`${dateValue}T${value}:00Z`));
@@ -351,10 +363,12 @@ function dateTimeLocalToEventIso(value, timezone) {
 
 function eventIsoToDateTimeLocal(value, timezone) {
   if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-  }).formatToParts(new Date(value));
+  }).formatToParts(date);
   const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal')
     .map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
@@ -380,10 +394,12 @@ function populateTimezoneSelect(select, selected, allowEmpty = false) {
 }
 
 function formatInvitationDeadline(value, timezone) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'deadline unavailable';
   return new Intl.DateTimeFormat(undefined, {
     month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
     timeZoneName: 'short', timeZone: timezone || 'UTC'
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function mountInvitationPreview(preview, event) {
