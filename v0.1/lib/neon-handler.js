@@ -399,7 +399,7 @@ async function createHandler({ sql, env = process.env }) {
       if (match[2] === 'guests' && method === 'POST') {
         const name = typeof input.name === 'string' ? input.name.trim() : '';
         const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
-        const partyLimit = Number(input.partyLimit);
+        const partyLimit = rows[0].guest_mode === 'individual' ? 1 : Number(input.partyLimit);
         if (!name || !validEmail(email) || !Number.isInteger(partyLimit) || partyLimit < 1 || partyLimit > 20) {
           throw error('Guest details are invalid.');
         }
