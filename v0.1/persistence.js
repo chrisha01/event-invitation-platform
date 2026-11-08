@@ -853,6 +853,19 @@ class Store {
   }
 
   seatingAttendees(eventId, hostId) {
+    this.db.prepare(
+      `INSERT INTO rsvp_attendees
+         (guest_unit_id, name, dietary, accessibility, age_band, created_at)
+       SELECT g.id, g.name, '', '', 'adult', ?
+       FROM guest_units g
+       JOIN events e ON e.id = g.event_id
+       JOIN rsvps r ON r.guest_unit_id = g.id
+       WHERE g.event_id = ? AND e.host_id = ? AND e.guest_mode = 'individual'
+         AND r.answer = 'yes' AND r.party_size = 1 AND g.revoked_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM rsvp_attendees a WHERE a.guest_unit_id = g.id
+         )`
+    ).run(new Date().toISOString(), eventId, hostId);
     return this.db.prepare(
       `SELECT a.id, a.guest_unit_id AS guestUnitId, a.name, a.dietary,
               a.accessibility, a.age_band AS ageBand, g.name AS groupName

@@ -195,6 +195,17 @@ async function createHandler({ sql, env = process.env }) {
     return value ?? fallback;
   };
   async function seatingAttendees(eventId, hostId) {
+    await query`INSERT INTO rsvp_attendees
+      (guest_unit_id,name,dietary,accessibility,age_band,created_at)
+      SELECT g.id,g.name,'','', 'adult',${now()}
+      FROM guest_units g
+      JOIN events e ON e.id=g.event_id
+      JOIN rsvps r ON r.guest_unit_id=g.id
+      WHERE g.event_id=${eventId} AND e.host_id=${hostId} AND e.guest_mode='individual'
+        AND r.answer='yes' AND r.party_size=1 AND g.revoked_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM rsvp_attendees a WHERE a.guest_unit_id=g.id
+        )`;
     const rows = await query`SELECT a.id,a.guest_unit_id,a.name,a.dietary,a.accessibility,
       a.age_band,g.name AS group_name FROM rsvp_attendees a
       JOIN guest_units g ON g.id=a.guest_unit_id JOIN events e ON e.id=g.event_id
