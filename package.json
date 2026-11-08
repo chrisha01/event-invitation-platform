@@ -1,0 +1,17 @@
+{
+  "name": "gatherly-netlify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Netlify deployment scaffolding for the Gatherly static demo and Functions backend.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "validate:deployment": "node scripts/validate-deployment.js",
+    "test": "npm run validate:deployment"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0"
+  }
+}
