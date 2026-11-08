@@ -772,7 +772,11 @@ async function createHandler({ sql, env = process.env }) {
           ON CONFLICT(guest_unit_id) DO UPDATE SET answer=EXCLUDED.answer,
           party_size=EXCLUDED.party_size,updated_at=EXCLUDED.updated_at RETURNING id`;
         await query`DELETE FROM rsvp_attendees WHERE guest_unit_id=${guest.id}`;
-        for (const attendee of Array.isArray(input.attendees) ? input.attendees.slice(0, 20) : []) {
+        const attendees = Array.isArray(input.attendees) ? input.attendees.slice(0, 20) : [];
+        if (input.answer === 'yes' && guest.guest_mode === 'individual' && attendees.length === 0) {
+          attendees.push({ name: guest.name });
+        }
+        for (const attendee of attendees) {
           if (attendee && typeof attendee.name === 'string') {
             await query`INSERT INTO rsvp_attendees(guest_unit_id,name,dietary,accessibility,age_band,created_at)
               VALUES(${guest.id},${attendee.name.trim()},
