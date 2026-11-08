@@ -1734,14 +1734,22 @@ function setupSeating(event, card) {
     const publish = document.createElement('button');
     publish.type = 'button';
     publish.className = 'secondary';
-    publish.textContent = 'Publish plan';
-    publish.disabled = plan.status === 'published';
+    const isPublished = plan.status === 'published';
+    publish.textContent = isPublished ? 'Published' : 'Publish plan';
+    publish.disabled = isPublished;
+    if (isPublished) publish.classList.add('is-published');
     publish.addEventListener('click', async () => {
+      publish.disabled = true;
+      publish.textContent = 'Publishing…';
       try {
         const result = await api(`/api/events/${event.id}/seating/plans/${plan.id}/publish`, { method: 'POST', body: '{}' });
         renderPlan(result.plan, attendees);
         showMessage('Seating plan published.');
-      } catch (error) { showMessage(error.message, true); }
+      } catch (error) {
+        publish.disabled = false;
+        publish.textContent = 'Publish plan';
+        showMessage(error.message, true);
+      }
     });
     actions.append(rerun, resetDraft, publish);
     list.append(actions);
