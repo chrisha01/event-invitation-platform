@@ -76,6 +76,15 @@ function validEmail(value) {
     EMAIL_RE.test(value) && RESERVED_EMAIL_DOMAIN_RE.test(value.slice(value.lastIndexOf('@') + 1));
 }
 
+function dateColumn(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value || '');
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  return isoMatch ? isoMatch[1] : '';
+}
+
 function eventView(row) {
   if (!row) return null;
   const jsonValue = (value, fallback) => {
@@ -85,9 +94,9 @@ function eventView(row) {
     return value || fallback;
   };
   return {
-    id: Number(row.id), title: row.title, eventDate: String(row.event_date).slice(0, 10),
+    id: Number(row.id), title: row.title, eventDate: dateColumn(row.event_date),
     eventStartTime: row.event_start_time || null, eventEndTime: row.event_end_time || null,
-    timezone: row.event_timezone || null, location: row.location, guestMode: row.guest_mode,
+    timezone: row.event_timezone || 'UTC', location: row.location, guestMode: row.guest_mode,
     rsvpDeadline: row.rsvp_deadline || null, responsesOpen: Boolean(row.responses_open),
     invitedUnits: Number(row.invited_units || 0), revokedUnits: Number(row.revoked_units || 0),
     yesUnits: Number(row.yes_units || 0), noUnits: Number(row.no_units || 0),
@@ -98,7 +107,7 @@ function eventView(row) {
     published: Boolean(row.published), status: row.status || 'active',
     statusNote: row.status_note || null,
     replacement: row.replacement_event_date ? {
-      eventDate: String(row.replacement_event_date).slice(0, 10),
+      eventDate: dateColumn(row.replacement_event_date),
       startTime: row.replacement_event_start_time || null,
       endTime: row.replacement_event_end_time || null,
       timezone: row.replacement_event_timezone || null
@@ -420,7 +429,7 @@ async function createHandler({ sql, env = process.env }) {
           VALUES(${eventId},${name},${email},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
         await query`INSERT INTO email_outbox(guest_unit_id,recipient,subject,body,created_at)
           VALUES(${inserted[0].id},${email},${`Your invitation: ${rows[0].title}`},
-          ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${String(rows[0].event_date).slice(0,10)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
+          ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${dateColumn(rows[0].event_date)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
         return response(201, { guest: { id: Number(inserted[0].id), name, email, partyLimit }, inviteUrl });
       }
       if (match[2] === 'guests/bulk' && method === 'POST') {
@@ -451,7 +460,7 @@ async function createHandler({ sql, env = process.env }) {
             VALUES(${eventId},${name},${email},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
           await query`INSERT INTO email_outbox(guest_unit_id,recipient,subject,body,created_at)
             VALUES(${inserted[0].id},${email},${`Your invitation: ${rows[0].title}`},
-            ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${String(rows[0].event_date).slice(0,10)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
+            ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${dateColumn(rows[0].event_date)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
           created.push({ id: Number(inserted[0].id), name, email, partyLimit, inviteUrl });
         }
         return response(201, { guests: created });
@@ -752,10 +761,10 @@ async function createHandler({ sql, env = process.env }) {
       const canRespond = guest.status !== 'cancelled' && Boolean(guest.responses_open) &&
         (!deadlinePassed || Boolean(guest.reopened_at));
       if (method === 'GET') return response(200, { event: {
-        title: guest.title, eventDate: String(guest.event_date).slice(0,10), location: guest.location,
+        title: guest.title, eventDate: dateColumn(guest.event_date), location: guest.location,
         status: guest.status || 'active', statusNote: guest.status_note || null,
         eventStartTime: guest.event_start_time || null, eventEndTime: guest.event_end_time || null,
-        timezone: guest.event_timezone || null, rsvpDeadline: guest.rsvp_deadline || null,
+        timezone: guest.event_timezone || 'UTC', rsvpDeadline: guest.rsvp_deadline || null,
         theme: guest.theme_json || {}, invitationSettings: guest.invitation_settings_json || {},
         invitationCopy: guest.invitation_copy_json || {}
       }, guest: { name: guest.name, partyLimit: Number(guest.party_limit), answer: guest.answer || null,
