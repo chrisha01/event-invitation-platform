@@ -2,3 +2,6 @@
 v0.1/data/*.sqlite-wal
 v0.1/data/*.sqlite-shm
 v0.1/data/*.sqlite-journal
+.neon
+node_modules/
+.env.local
