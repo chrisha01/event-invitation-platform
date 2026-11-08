@@ -272,16 +272,13 @@ function syncInvitationPresentation(invitation, settings, isPreview = false) {
     else envelope.setAttribute('aria-controls', 'guest-content');
   }
   if (content) content.hidden = safeSettings.revealMode === 'envelope';
-  if (audioControl) audioControl.hidden = !safeSettings.chimeEnabled || !isPreview;
+  if (audioControl) audioControl.hidden = true;
   if (chime) {
     chime.disabled = isPreview;
     chime.hidden = true;
     chime.textContent = 'Play gentle background music';
   }
-  if (audioStatus) {
-    audioStatus.textContent = isPreview && safeSettings.chimeEnabled
-      ? 'Music starts when a guest opens this invitation; browser playback may require an extra click.' : '';
-  }
+  if (audioStatus) audioStatus.textContent = '';
 }
 
 function applyTheme(element, theme) {
@@ -690,12 +687,12 @@ async function loadEvents() {
     card.innerHTML = `<div class="event-topbar"><p class="breadcrumb"><span class="event-breadcrumb-title"></span></p><span class="local-event-tag">LOCAL EVENT</span></div><div class="event-heading"><div class="event-heading__copy"><div class="event-status"><span class="publication-status" role="status"></span><span class="response-state"></span></div><h2></h2><p class="event-meta"></p></div><div class="event-actions"><button class="open-event">Open event</button><button class="publish">Publish event</button><button class="add secondary">Add guest unit</button><button class="guest-toggle secondary" aria-expanded="false">Show guests</button><button class="export secondary">Export CSV</button><button class="print secondary">Print list</button><button class="toggle secondary"></button><button class="refresh secondary">Refresh</button></div></div><div class="stats" aria-live="polite"></div><div class="event-workspace" hidden><div class="event-workspace__bar"><button type="button" class="back-events secondary">Back to events</button><nav class="event-section-nav" aria-label="Event workspace sections" role="tablist"><button type="button" role="tab" data-section="overview" aria-selected="true">Overview</button><button type="button" role="tab" data-section="guests" aria-selected="false">Guests</button><button type="button" role="tab" data-section="seating" aria-selected="false">Seating</button><button type="button" role="tab" data-section="event-day" aria-selected="false">Event day</button><button type="button" role="tab" data-section="messages" aria-selected="false">Messages</button><button type="button" role="tab" data-section="invitation" aria-selected="false">Invitation</button><button type="button" role="tab" data-section="settings" aria-selected="false">Settings</button></nav></div></div><section class="check-in-panel notice" data-event-section="event-day"><div class="check-in-panel__heading"><div><p class="section-kicker">EVENT DAY</p><h3>Check-in</h3><p class="help">Search a guest unit, email, or named attendee.</p></div><form class="walk-in-form"><input name="name" maxlength="100" placeholder="Walk-in name" aria-label="Walk-in name" required><input name="attendeeName" maxlength="100" placeholder="Attendee name" aria-label="Walk-in attendee name"><button type="submit">Add walk-in</button></form></div><label class="check-in-search-label">Find arrival<input class="check-in-search" type="search" placeholder="Name, email, or attendee" autocomplete="off"></label><div class="check-in-results" aria-live="polite"></div><p class="check-in-message message" role="status" aria-live="polite"></p></section><section class="event-status-panel notice" data-event-section="settings"><form class="event-status-form"><div class="columns"><label>Event status<select name="status"><option value="active">Active</option><option value="postponed">Postponed</option><option value="cancelled">Cancelled</option></select></label><label>Organizer note (optional)<input name="note" maxlength="500"></label></div><button type="submit" class="secondary">Save event status</button><p class="event-status-message message" role="status" aria-live="polite"></p></form></section><section class="local-message-panel notice" data-event-section="messages"><form class="local-message-form"><strong>Local message preview</strong><p class="help">Capture a message for selected guests in the local outbox. No email is sent.</p><div class="columns"><label>Recipients<select name="filter"><option value="all">All guests</option><option value="pending">Pending / no reply</option><option value="yes">Attending / yes</option><option value="maybe">Maybe</option><option value="no">Declined</option></select></label><label>Subject (optional)<input name="subject" maxlength="200"></label></div><label>Message (optional)<textarea name="message" rows="4" maxlength="10000"></textarea></label><button type="submit" class="secondary">Capture local preview</button><p class="local-message-result message" role="status" aria-live="polite"></p></form></section><section class="publish-next-steps notice" role="status" aria-labelledby="__publish_next_steps_title" data-event-section="overview" hidden><h3 id="__publish_next_steps_title">Published locally — what next?</h3><p>Your event is ready in this local workspace. Create a guest unit to generate a private RSVP link. Its invitation is captured in the local outbox; no email is sent.</p><div class="row"><button type="button" class="next-steps-add">Create a guest unit</button><button type="button" class="secondary next-steps-outbox">Open local email outbox</button></div></section><section class="guest-panel" data-event-section="guests" aria-labelledby="__guest_list_title" hidden><div class="guest-panel__head"><div><p class="section-kicker">INVITATIONS</p><h3 id="__guest_list_title">Your guest list</h3><p class="muted">Guest units and replies stored in this local workspace only.</p></div><button type="button" class="guest-panel-toggle secondary" aria-expanded="false" aria-controls="__guest_panel">Hide guest list</button></div><div class="guest-form-slot"></div><div class="guest-table"></div></section><section class="print-view" hidden></section><div class="theme-editor" data-event-section="invitation">
       <button type="button" class="secondary theme-toggle" aria-expanded="false">Customize invitation</button>
       <section class="theme-panel" hidden>
-        <p class="help">Adjust how the invitation opens, its optional background music, colors, font, and cover. Preview changes before saving.</p>
+        <p class="help">Adjust how the invitation opens, colors, font, and cover. Preview changes before saving.</p>
         <section class="invitation-settings" aria-labelledby="invitation-settings-title">
           <div class="invitation-settings__heading">
             <p class="section-kicker">GUEST EXPERIENCE</p>
             <h3 class="invitation-settings-title">How the invitation opens</h3>
-            <p class="help">Choose how the card appears and add an optional visual accent. Optional background music starts as guests open the invitation.</p>
+            <p class="help">Choose how the card appears and add an optional visual accent.</p>
           </div>
           <div class="columns invitation-settings-controls">
             <label>Presentation
@@ -723,7 +720,6 @@ async function loadEvents() {
               Play gentle background music when opened
             </label>
           </div>
-          <button type="button" class="save-invitation-settings">Save invitation experience</button>
           <p class="invitation-settings-status message" role="status" aria-live="polite"></p>
         </section>
         <section class="invitation-copy-editor" aria-labelledby="invitation-copy-title">
@@ -762,7 +758,6 @@ async function loadEvents() {
             </label>
           </div>
           <button type="button" class="secondary remove-invitation-image">Remove invitation image</button>
-          <button type="button" class="save-invitation-copy">Save invitation copy</button>
           <p class="invitation-copy-status message" role="status" aria-live="polite"></p>
         </section>
         <div class="columns theme-controls">
@@ -791,7 +786,7 @@ async function loadEvents() {
         <p class="help preview-disclosure">Draft preview only. Example guest details are illustrative; preview controls are intentionally inactive and never play sound or submit an RSVP.</p>
         <p class="contrast-warning" role="status" aria-live="polite" hidden></p>
         <p class="theme-status message" role="status" aria-live="polite"></p>
-        <button type="button" class="save-theme">Save theme</button>
+        <button type="button" class="save-theme save-invitation-settings save-invitation-copy">Save invitation changes</button>
       </section>
     </div>`;
     const checklist = document.createElement('section');
@@ -2063,14 +2058,21 @@ panel.id = `theme-panel-${String(event.id).replace(/[^a-z\d_-]/gi, '')}`;
     syncInvitationCopyFields();
     setInvitationCopyStatus('Invitation image removed from this draft.');
   });
-  saveInvitationCopy.addEventListener('click', async () => {
+  const saveInvitationChanges = async () => {
     if (event.status === 'cancelled') return;
-    saveInvitationCopy.disabled = true;
-    saveInvitationCopy.textContent = 'Saving…';
+    if (!validateContrast()) return;
+    isSaving = true;
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    setStatus('');
+    setInvitationStatus('');
     setInvitationCopyStatus('');
     try {
+      const settings = normalizeInvitationSettings(draftInvitationSettings);
       const copy = normalizeInvitationCopy(draftInvitationCopy);
-      const payload = {
+      const theme = normalizeTheme(draftTheme);
+      if (!fontSize) delete theme.fontSize;
+      const copyPayload = {
         title: copy.title,
         intro: copy.intro,
         rsvpHeading: copy.rsvpHeading,
@@ -2080,44 +2082,43 @@ panel.id = `theme-panel-${String(event.id).replace(/[^a-z\d_-]/gi, '')}`;
         imageShape: copy.imageShape,
         imageAlt: copy.imageAlt
       };
-      const result = await api(`/api/events/${event.id}/invitation-copy`, {
-        method: 'PUT', body: JSON.stringify(payload)
-      });
-      event.invitationCopy = result.invitationCopy;
-      draftInvitationCopy = normalizeInvitationCopy(result.invitationCopy);
+      const [settingsResult, copyResult, themeResult] = await Promise.all([
+        api(`/api/events/${event.id}/invitation`, {
+          method: 'PUT',
+          body: JSON.stringify(settings)
+        }),
+        api(`/api/events/${event.id}/invitation-copy`, {
+          method: 'PUT',
+          body: JSON.stringify(copyPayload)
+        }),
+        api(`/api/events/${event.id}/theme`, {
+          method: 'PUT',
+          body: JSON.stringify(theme)
+        })
+      ]);
+      event.invitationSettings = settingsResult.invitationSettings || settings;
+      event.invitationCopy = copyResult.invitationCopy || copy;
+      event.theme = themeResult.theme || theme;
+      draftInvitationSettings = { ...event.invitationSettings };
+      draftInvitationCopy = normalizeInvitationCopy(event.invitationCopy);
+      draftTheme = { ...theme };
+      syncInvitationFields();
       syncInvitationCopyFields();
-      setInvitationCopyStatus('Invitation copy saved.');
+      syncFields();
+      setInvitationStatus('');
+      setInvitationCopyStatus('');
+      setStatus('Invitation changes saved.');
     } catch (error) {
-      setInvitationCopyStatus(error.message, true);
+      setStatus(error.message, true);
     } finally {
-      saveInvitationCopy.disabled = false;
-      saveInvitationCopy.textContent = 'Save invitation copy';
+      isSaving = false;
+      validateContrast();
+      save.textContent = 'Save invitation changes';
     }
-  });
-  saveInvitation.addEventListener('click', async () => {
-    if (event.status === 'cancelled') return;
-    isSavingInvitation = true;
-    saveInvitation.disabled = true;
-    saveInvitation.textContent = 'Saving…';
-    setInvitationStatus('');
-    try {
-      const settings = normalizeInvitationSettings(draftInvitationSettings);
-      await api(`/api/events/${event.id}/invitation`, {
-        method: 'PUT',
-        body: JSON.stringify(settings)
-      });
-      event.invitationSettings = settings;
-      draftInvitationSettings = { ...settings };
-      syncInvitationPresentation(invitation, draftInvitationSettings, true);
-      setInvitationStatus('Invitation experience saved.');
-    } catch (error) {
-      setInvitationStatus(error.message, true);
-    } finally {
-      isSavingInvitation = false;
-      saveInvitation.disabled = false;
-      saveInvitation.textContent = 'Save invitation experience';
-    }
-  });
+  };
+  [save, saveInvitation, saveInvitationCopy]
+    .filter((button, index, buttons) => button && buttons.indexOf(button) === index)
+    .forEach((button) => button.addEventListener('click', saveInvitationChanges));
   preset.addEventListener('change', () => {
     if (THEME_PRESETS[preset.value]) {
       draftTheme = { ...draftTheme, preset: preset.value, ...THEME_PRESETS[preset.value] };
@@ -2153,32 +2154,6 @@ panel.id = `theme-panel-${String(event.id).replace(/[^a-z\d_-]/gi, '')}`;
     if (['small', 'medium', 'large'].includes(fontSize.value)) {
       draftTheme.fontSize = fontSize.value;
       markCustom();
-    }
-  });
-  save.addEventListener('click', async () => {
-    if (event.status === 'cancelled') return;
-    if (!validateContrast()) return;
-    isSaving = true;
-    save.disabled = true;
-    save.textContent = 'Saving…';
-    setStatus('');
-    try {
-      const theme = normalizeTheme(draftTheme);
-      if (!fontSize) delete theme.fontSize;
-      await api(`/api/events/${event.id}/theme`, {
-        method: 'PUT',
-        body: JSON.stringify(theme)
-      });
-      event.theme = theme;
-      draftTheme = { ...theme };
-      setThemePreview(invitation, draftTheme);
-      setStatus('Theme saved.');
-    } catch (error) {
-      setStatus(error.message, true);
-    } finally {
-      isSaving = false;
-      validateContrast();
-      save.textContent = 'Save theme';
     }
   });
 }
@@ -2829,17 +2804,16 @@ async function showGuest(rsvpToken) {
         };
         playChord();
         musicTimer = window.setInterval(playChord, 3800);
-        status.textContent = 'Background music is playing.';
+        status.textContent = '';
         audioControl.hidden = true;
         removeMusicInteractionRetry();
       } catch {
         if (attempt !== musicAttempt) return;
         stopInvitationMusic();
-        status.textContent = 'Your browser blocked automatic playback. Tap or click inside the invitation, or use the button below to start the music.';
-        button.textContent = 'Start background music';
-        button.hidden = false;
+        status.textContent = '';
+        button.hidden = true;
         button.disabled = false;
-        audioControl.hidden = false;
+        audioControl.hidden = true;
         armMusicInteractionRetry();
       } finally {
         if (attempt === musicAttempt) {
