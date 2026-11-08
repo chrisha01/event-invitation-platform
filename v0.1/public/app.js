@@ -628,7 +628,6 @@ $('#event-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = formValues(form);
-  if (data.rsvpDeadline) data.rsvpDeadline = dateTimeLocalToEventIso(data.rsvpDeadline, data.timezone);
   if (data.capacity) data.capacity = Number(data.capacity);
   else data.capacity = null;
   try {
@@ -840,7 +839,6 @@ async function loadEvents() {
       editForm.addEventListener('submit', async (submitEvent) => {
         submitEvent.preventDefault();
         const data = formValues(editForm);
-        if (data.rsvpDeadline) data.rsvpDeadline = dateTimeLocalToEventIso(data.rsvpDeadline, data.timezone);
         data.capacity = data.capacity ? Number(data.capacity) : null;
         try {
           const result = await api(`/api/events/${event.id}`, { method: 'PUT', body: JSON.stringify(data) });
