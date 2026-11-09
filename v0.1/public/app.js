@@ -1803,10 +1803,10 @@ function setupSeating(event, card) {
       const tableControls = document.createElement('div');
       tableControls.className = 'seating-table-controls';
       tableControls.hidden = true;
-      tableControls.innerHTML = '<label>Shape<select aria-label="Table shape"><option value="round">Round</option><option value="rectangle">Rectangle</option><option value="square">Square</option><option value="banquet">Banquet</option></select></label><label>Chairs<div><button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button></div></label><button type="button" class="secondary seating-table-delete">Delete table</button>';
+      tableControls.innerHTML = '<label>Shape<select aria-label="Table shape"><option value="round">Round</option><option value="rectangle">Rectangle</option><option value="square">Square</option><option value="banquet">Banquet</option></select></label><label>Chairs<div><button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button></div></label>';
       const chairInput = tableControls.querySelector('input');
       const shapeSelect = tableControls.querySelector('select');
-      tableControls.querySelector('.seating-table-delete').addEventListener('click', async (clickEvent) => {
+      const deleteTable = async (clickEvent) => {
         clickEvent.stopPropagation();
         if (!window.confirm(`Delete ${table.name}? Guests seated there will become unassigned.`)) return;
         try {
@@ -1816,7 +1816,7 @@ function setupSeating(event, card) {
           renderPlan(result.plan, attendees);
           showMessage('Table deleted.');
         } catch (error) { showMessage(error.message, true); }
-      });
+      };
       const tableDeleteButton = document.createElement('button');
       tableDeleteButton.type = 'button';
       tableDeleteButton.className = 'seating-table-delete-button';
@@ -1824,10 +1824,7 @@ function setupSeating(event, card) {
       tableDeleteButton.setAttribute('aria-label', `Delete ${table.name}`);
       tableDeleteButton.title = `Delete ${table.name}`;
       tableDeleteButton.hidden = true;
-      tableDeleteButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        tableControls.querySelector('.seating-table-delete').click();
-      });
+      tableDeleteButton.addEventListener('click', deleteTable);
       chairInput.value = table.capacity;
       shapeSelect.value = table.shape || 'round';
       const saveTable = async () => {
