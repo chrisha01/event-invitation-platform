@@ -1707,6 +1707,7 @@ function setupSeating(event, card) {
         seat.addEventListener('dragleave', () => seat.classList.remove('is-drop-target'));
         seat.addEventListener('drop', (dropEvent) => {
           dropEvent.preventDefault();
+          dropEvent.stopPropagation();
           seat.classList.remove('is-drop-target');
           const payload = dropEvent.dataTransfer?.getData('text/gatherly-attendee');
           if (!payload || attendee) return;
