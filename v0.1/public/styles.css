@@ -1038,6 +1038,35 @@ main.guest-main {
   font-size: .8rem;
   font-weight: 400;
 }
+.rsvp-contact {
+  max-width: 420px;
+  color: var(--invite-text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.rsvp-contact-consent {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  color: var(--invite-text);
+  font-size: .82rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.rsvp-contact-consent input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--invite-primary);
+}
+.rsvp-contact > .help {
+  margin: 6px 0 0 25px;
+  font-size: .76rem;
+}
 
 .invitation-rsvp .rsvp-submit {
   min-height: 49px;
