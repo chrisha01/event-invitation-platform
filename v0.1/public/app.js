@@ -1806,8 +1806,8 @@ function setupSeating(event, card) {
       tableControls.innerHTML = '<label>Shape<select aria-label="Table shape"><option value="round">Round</option><option value="rectangle">Rectangle</option><option value="square">Square</option><option value="banquet">Banquet</option></select></label><label>Chairs<div><button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button></div></label><button type="button" class="secondary seating-table-delete">Delete table</button>';
       const chairInput = tableControls.querySelector('input');
       const shapeSelect = tableControls.querySelector('select');
-      tableControls.querySelector('.seating-table-delete').addEventListener('click', async (event) => {
-        event.stopPropagation();
+      tableControls.querySelector('.seating-table-delete').addEventListener('click', async (clickEvent) => {
+        clickEvent.stopPropagation();
         if (!window.confirm(`Delete ${table.name}? Guests seated there will become unassigned.`)) return;
         try {
           const result = await api(`/api/events/${event.id}/seating/plans/${plan.id}/tables`, {
