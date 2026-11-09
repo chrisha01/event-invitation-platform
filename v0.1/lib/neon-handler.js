@@ -232,7 +232,7 @@ async function createHandler({ sql, env = process.env }) {
       p.updated_at,p.published_at FROM seating_plans p JOIN events e ON e.id=p.event_id
       WHERE p.id=${planId} AND p.event_id=${eventId} AND e.host_id=${hostId}`;
     if (!rows[0]) return null;
-    const tables = await query`SELECT id,name,capacity,shape,position_x,position_y,sort_order
+    const tables = await query`SELECT id,name,capacity,shape,rotation,position_x,position_y,sort_order
       FROM seating_tables WHERE plan_id=${planId} ORDER BY sort_order,id`;
     const assignments = await query`SELECT attendee_id,table_id,seat_index FROM seating_assignments
       WHERE plan_id=${planId} ORDER BY attendee_id`;
@@ -243,7 +243,7 @@ async function createHandler({ sql, env = process.env }) {
       algorithmVersion: row.algorithm_version, seed: Number(row.seed), inputHash: row.input_hash,
       score: Number(row.score), createdAt: row.created_at, updatedAt: row.updated_at,
       publishedAt: row.published_at, tables: tables.map((t) => ({ id: Number(t.id), name: t.name,
-        capacity: Number(t.capacity), shape: t.shape, positionX: Number(t.position_x),
+        capacity: Number(t.capacity), shape: t.shape, rotation: Number(t.rotation || 0), positionX: Number(t.position_x),
         positionY: Number(t.position_y), sortOrder: Number(t.sort_order) })),
       assignments: assignments.map((a) => ({ attendeeId: Number(a.attendee_id), tableId: Number(a.table_id), seatIndex: Number(a.seat_index || 0) })),
       venueItems: jsonValue(row.venue_items_json, []), floorPlan: jsonValue(row.floor_plan_json, {}),
@@ -560,9 +560,9 @@ async function createHandler({ sql, env = process.env }) {
               ${JSON.stringify(floorPlan)},${now()},${now()}) RETURNING id`;
           const newPlanId = Number(created[0].id);
           for (const [index, table] of tables.entries()) {
-            await query`INSERT INTO seating_tables(plan_id,name,capacity,shape,position_x,position_y,
+            await query`INSERT INTO seating_tables(plan_id,name,capacity,shape,rotation,position_x,position_y,
               initial_position_x,initial_position_y,sort_order) VALUES(${newPlanId},${table.name},${table.capacity},
-              ${table.shape},${table.positionX},${table.positionY},${table.positionX},${table.positionY},${index})`;
+              ${table.shape},${table.rotation},${table.positionX},${table.positionY},${table.positionX},${table.positionY},${index})`;
           }
           for (const constraint of constraints) {
             await query`INSERT INTO seating_constraints(plan_id,relationship_type,relationship,priority,
@@ -599,13 +599,15 @@ async function createHandler({ sql, env = process.env }) {
           const tableId = Number(input.tableId);
           const capacity = Number(input.capacity);
           const shape = ['round', 'rectangle', 'square', 'banquet'].includes(input.shape) ? input.shape : null;
+          const rotation = Number.isFinite(Number(input.rotation))
+            ? ((Math.round(Number(input.rotation)) % 360) + 360) % 360 : null;
           const table = plan.tables.find((item) => item.id === tableId);
           if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
             throw error('Table chair count must be a whole number from 1 to 100.');
           }
           await query`DELETE FROM seating_assignments
             WHERE plan_id=${planId} AND table_id=${tableId} AND seat_index >= ${capacity}`;
-          await query`UPDATE seating_tables SET capacity=${capacity},shape=COALESCE(${shape},shape)
+          await query`UPDATE seating_tables SET capacity=${capacity},shape=COALESCE(${shape},shape),rotation=COALESCE(${rotation},rotation)
             WHERE id=${tableId} AND plan_id=${planId}`;
           await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;
           return response(200, { plan: await planView(planId, eventId, current.id) });

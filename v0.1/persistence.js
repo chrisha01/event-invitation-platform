@@ -428,6 +428,9 @@ class Store {
         !refreshedSeatingTableColumns.some((column) => column.name === 'initial_position_x')) {
       this.db.exec('ALTER TABLE seating_tables ADD COLUMN initial_position_x REAL NOT NULL DEFAULT 50');
       this.db.exec('ALTER TABLE seating_tables ADD COLUMN initial_position_y REAL NOT NULL DEFAULT 50');
+    }
+    if (seatingTableColumns.length > 0 && !seatingTableColumns.some((column) => column.name === 'rotation')) {
+      this.db.exec('ALTER TABLE seating_tables ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0');
       this.db.exec('UPDATE seating_tables SET initial_position_x = position_x, initial_position_y = position_y');
     }
     this.backfillLegacyInviteUrls();
@@ -954,12 +957,12 @@ class Store {
     let floorPlan = {};
     try { floorPlan = JSON.parse(plan.floorPlanJson); } catch { floorPlan = {}; }
     const tables = this.db.prepare(
-      `SELECT id, name, capacity, shape, position_x AS positionX, position_y AS positionY,
+      `SELECT id, name, capacity, shape, rotation, position_x AS positionX, position_y AS positionY,
               sort_order AS sortOrder
        FROM seating_tables WHERE plan_id = ? ORDER BY sort_order, id`
     ).all(planId).map((table) => ({
       ...table, id: Number(table.id), capacity: Number(table.capacity),
-      positionX: Number(table.positionX), positionY: Number(table.positionY),
+      positionX: Number(table.positionX),       positionY: Number(table.positionY), rotation: Number(table.rotation || 0),
       sortOrder: Number(table.sortOrder)
     }));
     const assignments = this.db.prepare(
@@ -1006,11 +1009,11 @@ class Store {
       const planId = Number(inserted.lastInsertRowid);
       const insertTable = this.db.prepare(
         `INSERT INTO seating_tables
-         (plan_id, name, capacity, shape, position_x, position_y, initial_position_x, initial_position_y, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (plan_id, name, capacity, shape, rotation, position_x, position_y, initial_position_x, initial_position_y, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       input.tables.forEach((table, index) => insertTable.run(
-        planId, table.name, table.capacity, table.shape,
+        planId, table.name, table.capacity, table.shape, Number(table.rotation || 0),
         table.positionX, table.positionY, table.positionX, table.positionY, index
       ));
       const insertConstraint = this.db.prepare(
@@ -1119,7 +1122,7 @@ class Store {
     });
   }
 
-  updateSeatingTableCapacity(planId, eventId, hostId, tableId, capacity, now, shape = null) {
+  updateSeatingTableCapacity(planId, eventId, hostId, tableId, capacity, now, shape = null, rotation = null) {
     return this.transaction(() => {
       const owned = this.db.prepare(
         `SELECT p.id FROM seating_plans p JOIN events e ON e.id = p.event_id
@@ -1130,8 +1133,8 @@ class Store {
         'DELETE FROM seating_assignments WHERE plan_id = ? AND table_id = ? AND seat_index >= ?'
       ).run(planId, tableId, capacity);
       const changed = this.db.prepare(
-        'UPDATE seating_tables SET capacity = ?, shape = COALESCE(?, shape) WHERE id = ? AND plan_id = ?'
-      ).run(capacity, shape, tableId, planId).changes;
+        'UPDATE seating_tables SET capacity = ?, shape = COALESCE(?, shape), rotation = COALESCE(?, rotation) WHERE id = ? AND plan_id = ?'
+      ).run(capacity, shape, rotation, tableId, planId).changes;
       if (!changed) return false;
       this.db.prepare("UPDATE seating_plans SET status = 'stale', updated_at = ? WHERE id = ?").run(now, planId);
       return true;

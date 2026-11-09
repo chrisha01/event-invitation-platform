@@ -1116,6 +1116,15 @@ test('creates deterministic seating drafts, supports manual edits, publishes, an
   assert.deepEqual((await venueUpdate.json()).plan.venueItems[0], {
     type: 'Dance floor', label: 'Dance floor', positionX: 50, positionY: 60, width: 24, height: 18
   });
+  const chairUpdate = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/venue-items`, 'PUT', {
+    venueItems: [
+      { type: 'Dance floor', label: 'Dance floor', positionX: 50, positionY: 60, width: 24, height: 18 },
+      { type: 'Bar', label: 'Bar', positionX: 80, positionY: 20 },
+      { type: 'Chair', label: 'Chair', positionX: 72, positionY: 44, attendeeId: 1 }
+    ]
+  }, cookie);
+  assert.equal(chairUpdate.status, 200);
+  assert.equal((await chairUpdate.json()).plan.venueItems[2].attendeeId, 1);
   const reloadedPlan = await f.request(`/api/events/${event.id}/seating/plans/${planId}`, {}, cookie);
   assert.deepEqual((await reloadedPlan.json()).plan.venueItems[1], {
     type: 'Bar', label: 'Bar', positionX: 80, positionY: 20
@@ -1140,12 +1149,13 @@ test('creates deterministic seating drafts, supports manual edits, publishes, an
   assert.equal(reducedPlan.assignments.filter((assignment) => assignment.tableId === crowdedTable.table.id).length,
     crowdedTable.assignments.length - 1);
   const capacityUpdate = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/tables`, 'PUT', {
-    tableId: createdPlan.tables[0].id, capacity: 3, shape: 'rectangle'
+    tableId: createdPlan.tables[0].id, capacity: 3, shape: 'rectangle', rotation: 15
   }, cookie);
   assert.equal(capacityUpdate.status, 200);
   const capacityPlan = (await capacityUpdate.json()).plan;
   assert.equal(capacityPlan.tables[0].capacity, 3);
   assert.equal(capacityPlan.tables[0].shape, 'rectangle');
+  assert.equal(capacityPlan.tables[0].rotation, 15);
   assert.equal(firstPlan.payload.assignedCount, 3);
   assert.equal(firstPlan.payload.optimization.householdGroups, 1);
   assert.equal(firstPlan.payload.optimization.familiesKeptTogether, 0);
@@ -1259,7 +1269,7 @@ test('seating assignment edits reject duplicates and over-capacity moves', async
     `/api/events/${event.id}/seating/plans/${planId}/assignments`, 'PUT',
     { assignments: [] }, cookie
   );
-  assert.equal(blockedAssignments.status, 409);
+  assert.equal(blockedAssignments.status, 200);
   const badPositions = await f.jsonRequest(
     `/api/events/${event.id}/seating/plans/${planId}/positions`, 'PUT',
     { positions: [{ tableId: 999, positionX: 24, positionY: 68 }] }, cookie

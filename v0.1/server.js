@@ -155,6 +155,7 @@ function validateVenueItems(value) {
     const positionY = Number(item?.positionY);
     const width = item?.width === undefined ? null : Number(item.width);
     const height = item?.height === undefined ? null : Number(item.height);
+    const attendeeId = item?.attendeeId === undefined ? null : Number(item.attendeeId);
     if (!type || type.length > 50 || !label || label.length > 100 ||
         !Number.isFinite(positionX) || positionX < 3 || positionX > 97 ||
         !Number.isFinite(positionY) || positionY < 3 || positionY > 97 ||
@@ -162,8 +163,11 @@ function validateVenueItems(value) {
         (height !== null && (!Number.isFinite(height) || height <= 0 || height > 100))) {
       throw invalid('Venue items must have a label and valid map position.');
     }
+    if (attendeeId !== null && (!Number.isSafeInteger(attendeeId) || attendeeId < 1)) {
+      throw invalid('Venue item attendee assignments are invalid.');
+    }
     return { type, label, positionX, positionY, ...(width === null ? {} : { width }),
-      ...(height === null ? {} : { height }) };
+      ...(height === null ? {} : { height }), ...(attendeeId === null ? {} : { attendeeId }) };
   });
 }
 
@@ -192,6 +196,8 @@ function validateSeatingTables(value) {
     const capacity = Number(table?.capacity);
     const shape = ['round', 'rectangle', 'square', 'banquet'].includes(table?.shape)
       ? table.shape : 'round';
+    const rotation = Number.isFinite(Number(table?.rotation))
+      ? ((Math.round(Number(table.rotation)) % 360) + 360) % 360 : 0;
     const positionX = Number.isFinite(Number(table?.positionX))
       ? Number(table.positionX) : 18 + (index % 4) * 21;
     const positionY = Number.isFinite(Number(table?.positionY))
@@ -245,7 +251,7 @@ function validateSeatingTables(value) {
       throw invalid('Table positions must stay within the seating map.');
     }
     names.add(name.toLowerCase());
-    return { name, capacity, shape, positionX, positionY };
+    return { name, capacity, shape, rotation, positionX, positionY };
   });
 }
 
@@ -1233,11 +1239,13 @@ function createApp(options = {}) {
             const capacity = Number(input.capacity);
             const shape = ['round', 'rectangle', 'square', 'banquet'].includes(input.shape)
               ? input.shape : null;
+            const rotation = Number.isFinite(Number(input.rotation))
+              ? ((Math.round(Number(input.rotation)) % 360) + 360) % 360 : null;
             const table = plan.tables.find((item) => Number(item.id) === tableId);
             if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
               throw invalid('Table chair count must be a whole number from 1 to 100.');
             }
-            if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso(), shape)) {
+            if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso(), shape, rotation)) {
               throw invalid('Seating table could not be updated.', 409);
             }
             return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
@@ -1245,7 +1253,6 @@ function createApp(options = {}) {
           if (method === 'PUT' && planAction === 'assignments') {
             const input = await bodyJson(req);
             if (!Array.isArray(input.assignments)) throw invalid('Assignments must be an array.');
-            if (input.assignments.length === 0) throw invalid('Assignments update cannot be empty.', 409);
             const attendees = store.seatingAttendees(eventId, hostRecord.id);
             const currentInputHash = generateSeatingDraft(attendees, plan.tables, plan.constraints || [], plan.seed).inputHash;
             if (currentInputHash !== plan.inputHash || plan.status === 'stale') {

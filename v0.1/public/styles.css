@@ -14,6 +14,25 @@
   --paper: #f4f6f3;
   --surface: #fff;
 }
+.seating-venue-item.seating-venue-chair {
+  width: 28px;
+  min-width: 28px;
+  min-height: 20px;
+  padding: 2px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #9db3a7;
+  color: #314a3e;
+  text-align: center;
+  box-shadow: 0 2px 6px #183c3614;
+}
+.seating-venue-item__label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 * { box-sizing: border-box; }
 
@@ -498,8 +517,49 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   color: #fff;
   background: #23685c;
   box-shadow: 0 5px 12px #163c331f;
+  font-size: .58rem;
+  line-height: 1.1;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  transform: rotate(var(--surface-rotation, 0deg));
+  transform-origin: center;
 }
+.seating-map-table.is-selected .seating-map-table__surface {
+  outline: 2px solid #c8a05b;
+  outline-offset: 3px;
+}
+.seating-table-rotation-handle {
+  position: absolute;
+  z-index: 4;
+  top: -20px;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #23685c;
+  background: transparent;
+  border: 0;
+  cursor: grab;
+  transform: translateX(-50%);
+}
+.seating-table-rotation-handle:hover,
+.seating-table-rotation-handle:focus,
+.seating-table-rotation-handle:focus-visible {
+  color: #23685c;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  transform: translateX(-50%);
+}
+.seating-table-rotation-handle::before {
+  content: "↻";
+  font-size: 1.15rem;
+  line-height: 24px;
+}
+.seating-table-rotation-handle:active { cursor: grabbing; }
 .seating-map-table__surface strong { font-size: .8rem; }
 .seating-map-table__surface small { color: #dcece4; font-size: .72rem; }
 .seating-map-table--round .seating-map-table__surface { left: 35px; top: 37px; border-radius: 50%; }
