@@ -10,8 +10,15 @@ const { Store } = require('../persistence');
 
 test('startup configuration stays loopback and validates the port', () => {
   assert.deepEqual(startupConfig({ PORT: '0', GATHERLY_DB_PATH: 'local.sqlite' }), {
-    host: '127.0.0.1', port: 0, dbPath: 'local.sqlite'
+    host: '127.0.0.1', port: 0, dbPath: 'local.sqlite', allowedOrigins: []
   });
+  assert.deepEqual(startupConfig({
+    PORT: '0', GATHERLY_DB_PATH: 'local.sqlite',
+    GATHERLY_ALLOWED_ORIGINS: 'https://demo.ngrok-free.app, https://preview.example.test'
+  }).allowedOrigins, ['https://demo.ngrok-free.app', 'https://preview.example.test']);
+  assert.throws(() => startupConfig({
+    PORT: '0', GATHERLY_ALLOWED_ORIGINS: 'demo.ngrok-free.app'
+  }), /GATHERLY_ALLOWED_ORIGINS/);
   assert.throws(() => startupConfig({ PORT: '70000' }), /PORT/);
   assert.throws(() => startupConfig({ PORT: 'not-a-port' }), /PORT/);
   assert.throws(() => startupConfig({ PORT: '3000', GATHERLY_DB_PATH: ':memory:' }), /GATHERLY_DB_PATH/);

@@ -33,6 +33,48 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.seating-venue-item__delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: none;
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+  color: #fff;
+  background: #a44a43;
+  border: 0;
+  border-radius: 50%;
+  font-size: .75rem;
+  line-height: 18px;
+}
+.seating-venue-item:hover .seating-venue-item__delete,
+.seating-venue-item:focus-within .seating-venue-item__delete {
+  display: block;
+}
+.seating-drag-preview {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  z-index: 9999;
+  max-width: 180px;
+  padding: 5px 9px;
+  overflow: hidden;
+  color: #314a3e;
+  background: #fff;
+  border: 1px solid #9db3a7;
+  border-radius: 5px;
+  box-shadow: 0 3px 8px #183c3640;
+  font: 600 .72rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.seating-drag-preview--table {
+  color: #fff;
+  background: #23685c;
+  border-color: #23685c;
+}
 
 * { box-sizing: border-box; }
 
@@ -501,6 +543,17 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   width: 156px;
   height: 142px;
   transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.seating-map-table__surface,
+.seating-map-seat,
+.seating-table-rotation-handle,
+.seating-table-controls,
+.seating-table-delete-button {
+ pointer-events: auto;
+}
+.seating-map-layer.is-guest-dragging .seating-map-table__surface {
+  pointer-events: none;
 }
 .seating-map-table.is-drop-target .seating-map-table__surface {
   outline: 3px solid #c8a05b;
@@ -560,6 +613,21 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   line-height: 24px;
 }
 .seating-table-rotation-handle:active { cursor: grabbing; }
+.seating-table-delete-button {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  min-height: 22px;
+  padding: 0;
+  color: #fff;
+  background: #a44a43;
+  border: 0;
+  border-radius: 50%;
+  font-size: 1rem;
+  line-height: 22px;
+}
 .seating-map-table__surface strong { font-size: .8rem; }
 .seating-map-table__surface small { color: #dcece4; font-size: .72rem; }
 .seating-map-table--round .seating-map-table__surface { left: 35px; top: 37px; border-radius: 50%; }

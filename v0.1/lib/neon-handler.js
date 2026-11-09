@@ -612,6 +612,30 @@ async function createHandler({ sql, env = process.env }) {
           await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;
           return response(200, { plan: await planView(planId, eventId, current.id) });
         }
+        if (planAction === 'tables' && method === 'POST') {
+          const [table] = validateSeatingTables([input]);
+          const attendees = await seatingAttendees(eventId, current.id);
+          const tables = [...plan.tables, table];
+          const inputHash = generateSeatingDraft(attendees, tables, plan.constraints || [], plan.seed).inputHash;
+          const order = await query`SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
+            FROM seating_tables WHERE plan_id=${planId}`;
+          await query`INSERT INTO seating_tables(plan_id,name,capacity,shape,rotation,position_x,position_y,
+            initial_position_x,initial_position_y,sort_order)
+            VALUES(${planId},${table.name},${table.capacity},${table.shape},${table.rotation || 0},
+              ${table.positionX},${table.positionY},${table.positionX},${table.positionY},${Number(order[0].next)})`;
+          await query`UPDATE seating_plans SET status='saved',input_hash=${inputHash},updated_at=${now()}
+            WHERE id=${planId}`;
+          return response(200, { plan: await planView(planId, eventId, current.id) });
+        }
+        if (planAction === 'tables' && method === 'DELETE') {
+          const tableId = Number(input.tableId);
+          if (!Number.isSafeInteger(tableId)) throw error('Seating table could not be deleted.', 409);
+          const deleted = await query`DELETE FROM seating_tables WHERE id=${tableId} AND plan_id=${planId}
+            RETURNING id`;
+          if (!deleted.length) throw error('Seating table could not be deleted.', 409);
+          await query`UPDATE seating_plans SET status='saved',updated_at=${now()} WHERE id=${planId}`;
+          return response(200, { plan: await planView(planId, eventId, current.id) });
+        }
         if (planAction === 'positions' && method === 'PUT') {
           if (!Array.isArray(input.positions) || !input.positions.length) throw error('Positions must be an array.');
           const positions = input.positions.map((p) => ({ tableId: Number(p?.tableId), positionX: Number(p?.positionX), positionY: Number(p?.positionY) }));

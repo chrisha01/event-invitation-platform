@@ -820,7 +820,7 @@ async function loadEvents() {
     seatingPanel.className = 'seating-panel card';
     seatingPanel.dataset.eventSection = 'seating';
     seatingPanel.hidden = true;
-    seatingPanel.innerHTML = `<div class="seating-panel__heading"><div><p class="section-kicker">EXPERIMENTAL</p><h3>Seating draft</h3><p class="muted">Create a host-only draft from confirmed named attendees. This never changes RSVPs or check-in records.</p></div><div class="seating-panel__actions"><label class="floor-plan-file-label">Floor plan<input class="floor-plan-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></label><button type="button" class="secondary floor-plan-analyze" disabled>Analyze</button><button type="button" class="secondary floor-plan-clear" hidden>Remove plan</button><button type="button" class="secondary seating-refresh">Refresh</button></div></div><p class="floor-plan-status message" role="status" aria-live="polite"></p><div class="floor-plan-preview" hidden></div><div class="seating-seed-row"><button type="button" class="secondary seating-seed">Add synthetic confirmed attendees</button><label>Count<input class="seating-seed-count" type="number" min="1" max="20" value="12"></label></div><form class="seating-create-form"><div class="columns"><label>Plan name<input name="name" value="First seating draft" maxlength="100" required></label><label>Tables<input name="tables" type="number" min="1" max="40" value="6" required></label><label>Default seats per table<input name="capacity" type="number" min="1" max="100" value="8" required></label></div><p class="help seating-detection-note">Upload and analyze a floor plan to use its detected tables, shapes, seats, and positions automatically.</p><button type="submit">Create seating draft</button><p class="seating-message message" role="status" aria-live="polite"></p></form><div class="seating-plan-list"></div>`;
+    seatingPanel.innerHTML = `<div class="seating-panel__heading"><div><p class="section-kicker">SEATING MAP</p><h3>Seating plan</h3><p class="muted">Add tables and venue items directly to the map, then drag guests into place.</p></div><div class="seating-panel__actions"><label class="floor-plan-file-label">Floor plan<input class="floor-plan-file" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></label><button type="button" class="secondary floor-plan-analyze" disabled>Analyze</button><button type="button" class="secondary floor-plan-clear" hidden>Remove plan</button><button type="button" class="secondary seating-refresh">Refresh</button></div></div><p class="floor-plan-status message" role="status" aria-live="polite"></p><div class="floor-plan-preview" hidden></div><div class="seating-seed-row"><button type="button" class="secondary seating-seed">Add synthetic confirmed attendees</button><label>Count<input class="seating-seed-count" type="number" min="1" max="20" value="12"></label></div><p class="seating-message message" role="status" aria-live="polite"></p><div class="seating-plan-list"></div>`;
     card.append(seatingPanel);
     card.append(editPanel);
     const editForm = $('.event-edit-form', editPanel);
@@ -1165,14 +1165,21 @@ $('#event-switch').addEventListener('change', (event) => {
 });
 
 function setupSeating(event, card) {
+  const createDragPreview = (dataTransfer, label, kind = 'guest') => {
+    if (!dataTransfer) return () => {};
+    const preview = document.createElement('span');
+    preview.className = `seating-drag-preview seating-drag-preview--${kind}`;
+    preview.textContent = label;
+    document.body.append(preview);
+    dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+    return () => preview.remove();
+  };
   let seatingMapZoom = 1;
   const panel = $('.seating-panel', card);
   if (!panel) return;
-  const form = $('.seating-create-form', panel);
   const list = $('.seating-plan-list', panel);
   const message = $('.seating-message', panel);
-  if (!form || !list || !message) return;
-  const tableCountInput = form.elements.tables;
+  if (!list || !message) return;
   const floorPlanFile = $('.floor-plan-file', panel);
   const floorPlanAnalyze = $('.floor-plan-analyze', panel);
   const floorPlanClear = $('.floor-plan-clear', panel);
@@ -1263,7 +1270,6 @@ function setupSeating(event, card) {
       const tables = candidates.filter((candidate) => candidate.isTable);
       selectedFloorPlan.candidates = tables;
       saveFloorPlan(event.id, selectedFloorPlan);
-      tableCountInput.value = String(tables.length);
       if (!tables.length) {
         setFloorPlanStatus('No table-like shapes were detected. You can still create the plan manually.', true);
         return;
@@ -1447,6 +1453,7 @@ function setupSeating(event, card) {
     const attendeeById = new Map(attendees.map((attendee) => [Number(attendee.id), attendee]));
     const venueItems = Array.isArray(plan.venueItems) ? plan.venueItems.map((item) => ({ ...item })) : [];
     const setStandaloneGuestDropMode = (active) => {
+      mapLayer.classList.toggle('is-guest-dragging', active);
       mapLayer.querySelectorAll('.seating-venue-chair').forEach((chair) => {
         if (chair.dataset.occupied !== 'true') chair.draggable = !active;
       });
@@ -1469,12 +1476,34 @@ function setupSeating(event, card) {
         ? attendeeById.get(Number(itemData.attendeeId))?.name || 'Chair' : itemData.label;
       item.title = itemLabel.textContent;
       item.append(itemLabel);
+      const deleteItem = document.createElement('button');
+      deleteItem.type = 'button';
+      deleteItem.className = 'seating-venue-item__delete';
+      deleteItem.textContent = '×';
+      deleteItem.setAttribute('aria-label', `Delete ${itemLabel.textContent}`);
+      deleteItem.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const index = venueItems.indexOf(itemData);
+        if (index < 0) return;
+        venueItems.splice(index, 1);
+        try {
+          await persistVenueItems();
+          item.remove();
+          showMessage('Venue item deleted.');
+        } catch (error) {
+          venueItems.splice(index, 0, itemData);
+          showMessage(error.message, true);
+        }
+      });
+      item.append(deleteItem);
       item.style.left = `${positionX}%`; item.style.top = `${positionY}%`;
       item.draggable = Boolean(itemData.attendeeId);
       let dragMode = 'position';
       item.addEventListener('dragstart', (event) => {
         if (!itemData.attendeeId) return;
         dragMode = 'guest';
+        item._dragPreviewCleanup = createDragPreview(event.dataTransfer, itemLabel.textContent, 'guest');
         setStandaloneGuestDropMode(true);
         event.dataTransfer?.setData('text/gatherly-attendee', `${itemData.attendeeId}:`);
         event.dataTransfer?.setData('text/plain', itemLabel.textContent);
@@ -1482,6 +1511,7 @@ function setupSeating(event, card) {
       item.addEventListener('dragend', async (event) => {
         if (dragMode === 'guest') {
           dragMode = 'position';
+          item._dragPreviewCleanup?.();
           setStandaloneGuestDropMode(false);
           return;
         }
@@ -1526,6 +1556,27 @@ function setupSeating(event, card) {
         : itemData.label || itemData.type;
       item.title = itemLabel.textContent;
       item.append(itemLabel);
+      const deleteItem = document.createElement('button');
+      deleteItem.type = 'button';
+      deleteItem.className = 'seating-venue-item__delete';
+      deleteItem.textContent = '×';
+      deleteItem.setAttribute('aria-label', `Delete ${itemLabel.textContent}`);
+      deleteItem.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const index = venueItems.indexOf(itemData);
+        if (index < 0) return;
+        venueItems.splice(index, 1);
+        try {
+          await persistVenueItems();
+          item.remove();
+          showMessage('Venue item deleted.');
+        } catch (error) {
+          venueItems.splice(index, 0, itemData);
+          showMessage(error.message, true);
+        }
+      });
+      item.append(deleteItem);
       item.style.left = `${itemData.positionX}%`;
       item.style.top = `${itemData.positionY}%`;
       item.draggable = Boolean(itemData.attendeeId);
@@ -1533,6 +1584,7 @@ function setupSeating(event, card) {
       item.addEventListener('dragstart', (event) => {
         if (!itemData.attendeeId) return;
         dragMode = 'guest';
+        item._dragPreviewCleanup = createDragPreview(event.dataTransfer, itemLabel.textContent, 'guest');
         setStandaloneGuestDropMode(true);
         event.dataTransfer?.setData('text/gatherly-attendee', `${itemData.attendeeId}:`);
         event.dataTransfer?.setData('text/plain', itemLabel.textContent);
@@ -1540,6 +1592,7 @@ function setupSeating(event, card) {
       item.addEventListener('dragend', async (dragEvent) => {
         if (dragMode === 'guest') {
           dragMode = 'position';
+          item._dragPreviewCleanup?.();
           setStandaloneGuestDropMode(false);
           return;
         }
@@ -1576,7 +1629,7 @@ function setupSeating(event, card) {
     const venueToolsLabel = document.createElement('strong');
     venueToolsLabel.textContent = 'Venue items';
     venueTools.append(venueToolsLabel);
-    ['Standalone chair', 'Dance floor', 'Bar', 'DJ booth'].forEach((type) => {
+    ['Table', 'Standalone chair', 'Dance floor', 'Bar', 'DJ booth'].forEach((type) => {
       const tool = document.createElement('button');
       tool.type = 'button';
       tool.className = 'secondary';
@@ -1594,7 +1647,11 @@ function setupSeating(event, card) {
       const bounds = canvas.getBoundingClientRect();
       const positionX = Math.max(3, Math.min(97, 50 + ((clickEvent.clientX - (bounds.left + bounds.width / 2)) / seatingMapZoom / bounds.width) * 100));
       const positionY = Math.max(3, Math.min(97, 50 + ((clickEvent.clientY - (bounds.top + bounds.height / 2)) / seatingMapZoom / bounds.height) * 100));
-      addVenueItem(venuePlacementType, positionX, positionY);
+      if (venuePlacementType === 'Table') {
+        addTable(positionX, positionY);
+      } else {
+        addVenueItem(venuePlacementType, positionX, positionY);
+      }
       venuePlacementType = null;
       canvas.classList.remove('is-placement-mode');
       showMessage('Venue item placed.');
@@ -1701,11 +1758,13 @@ function setupSeating(event, card) {
           return;
         }
         tableDragActive = true;
+        tableMap._dragPreviewCleanup = createDragPreview(dragEvent.dataTransfer, table.name, 'table');
         dragEvent.dataTransfer?.setData('text/gatherly-table', String(table.id));
       });
       tableMap.addEventListener('dragend', async (dragEvent) => {
         if (!tableDragActive) return;
         tableDragActive = false;
+        tableMap._dragPreviewCleanup?.();
         const bounds = canvas.getBoundingClientRect();
         const positionX = Math.max(3, Math.min(97, ((dragEvent.clientX - bounds.left) / bounds.width) * 100));
         const positionY = Math.max(3, Math.min(97, ((dragEvent.clientY - bounds.top) / bounds.height) * 100));
@@ -1744,9 +1803,31 @@ function setupSeating(event, card) {
       const tableControls = document.createElement('div');
       tableControls.className = 'seating-table-controls';
       tableControls.hidden = true;
-      tableControls.innerHTML = '<label>Shape<select aria-label="Table shape"><option value="round">Round</option><option value="rectangle">Rectangle</option><option value="square">Square</option><option value="banquet">Banquet</option></select></label><label>Chairs<div><button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button></div></label>';
+      tableControls.innerHTML = '<label>Shape<select aria-label="Table shape"><option value="round">Round</option><option value="rectangle">Rectangle</option><option value="square">Square</option><option value="banquet">Banquet</option></select></label><label>Chairs<div><button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button></div></label><button type="button" class="secondary seating-table-delete">Delete table</button>';
       const chairInput = tableControls.querySelector('input');
       const shapeSelect = tableControls.querySelector('select');
+      tableControls.querySelector('.seating-table-delete').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (!window.confirm(`Delete ${table.name}? Guests seated there will become unassigned.`)) return;
+        try {
+          const result = await api(`/api/events/${event.id}/seating/plans/${plan.id}/tables`, {
+            method: 'DELETE', body: JSON.stringify({ tableId: table.id })
+          });
+          renderPlan(result.plan, attendees);
+          showMessage('Table deleted.');
+        } catch (error) { showMessage(error.message, true); }
+      });
+      const tableDeleteButton = document.createElement('button');
+      tableDeleteButton.type = 'button';
+      tableDeleteButton.className = 'seating-table-delete-button';
+      tableDeleteButton.textContent = '×';
+      tableDeleteButton.setAttribute('aria-label', `Delete ${table.name}`);
+      tableDeleteButton.title = `Delete ${table.name}`;
+      tableDeleteButton.hidden = true;
+      tableDeleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        tableControls.querySelector('.seating-table-delete').click();
+      });
       chairInput.value = table.capacity;
       shapeSelect.value = table.shape || 'round';
       const saveTable = async () => {
@@ -1804,12 +1885,16 @@ function setupSeating(event, card) {
             otherTable.querySelector('.seating-table-controls')?.setAttribute('hidden', '');
             const otherHandle = otherTable.querySelector('.seating-table-rotation-handle');
             if (otherHandle) otherHandle.hidden = true;
+            const otherDelete = otherTable.querySelector('.seating-table-delete-button');
+            if (otherDelete) otherDelete.hidden = true;
           }
         });
         tableMap.classList.add('is-selected');
         tableControls.hidden = !tableControls.hidden;
         rotationHandle.hidden = tableControls.hidden;
+        tableDeleteButton.hidden = tableControls.hidden;
       });
+      tableMap.append(tableDeleteButton);
       tableMap.append(rotationHandle);
       tableMap.append(tableSurface);
       tableMap.append(tableControls);
@@ -1838,6 +1923,7 @@ function setupSeating(event, card) {
           seat.dataset.attendeeId = String(attendee.id);
           seat.addEventListener('dragstart', (dragEvent) => {
             dragEvent.stopPropagation();
+            seat._dragPreviewCleanup = createDragPreview(dragEvent.dataTransfer, attendee.name, 'guest');
             setStandaloneGuestDropMode(true);
             dragEvent.dataTransfer?.setData('text/gatherly-attendee', `${attendee.id}:${table.id}`);
             dragEvent.dataTransfer?.setData('text/plain', attendee.name);
@@ -1845,6 +1931,7 @@ function setupSeating(event, card) {
           });
           seat.addEventListener('dragend', (dragEvent) => {
             dragEvent.stopPropagation();
+            seat._dragPreviewCleanup?.();
             setStandaloneGuestDropMode(false);
             seat.classList.remove('is-dragging');
           });
@@ -1882,10 +1969,14 @@ function setupSeating(event, card) {
       guest.append(name);
       guest.draggable = true;
       guest.addEventListener('dragstart', (dragEvent) => {
+        guest._dragPreviewCleanup = createDragPreview(dragEvent.dataTransfer, attendee.name, 'guest');
         setStandaloneGuestDropMode(true);
         dragEvent.dataTransfer?.setData('text/gatherly-attendee', `${attendee.id}:`);
       });
-      guest.addEventListener('dragend', () => setStandaloneGuestDropMode(false));
+      guest.addEventListener('dragend', () => {
+        guest._dragPreviewCleanup?.();
+        setStandaloneGuestDropMode(false);
+      });
       sidebar.append(guest);
     });
     canvas.append(sidebar);
@@ -1986,51 +2077,19 @@ function setupSeating(event, card) {
       const result = await api(`/api/events/${event.id}/seating`);
       list.replaceChildren();
       if (!result.attendees.length) {
-        showMessage('Add confirmed named attendees before creating a seating draft.', true);
-        return;
+        showMessage('Add confirmed named attendees to place guests on the map.');
+      } else {
+        showMessage(`${result.attendees.length} confirmed named attendees ready.`);
       }
-      showMessage(`${result.attendees.length} confirmed named attendees ready.`);
       const plan = result.plans[0];
       if (plan) {
         const detail = await api(`/api/events/${event.id}/seating/plans/${plan.id}`);
         renderPlan(detail.plan, result.attendees);
+      } else {
+        await createPlan(50, 50);
       }
     } catch (error) { showMessage(error.message, true); }
   };
-  form.addEventListener('submit', async (submitEvent) => {
-    submitEvent.preventDefault();
-    const tables = Number(form.elements.tables.value);
-    const capacity = Number(form.elements.capacity.value);
-    try {
-      const created = await api(`/api/events/${event.id}/seating/plans`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: form.elements.name.value,
-          tables: Array.from({ length: tables }, (_, index) => {
-            const candidate = selectedFloorPlan?.candidates?.[index];
-            return {
-              name: `Table ${index + 1}`,
-              shape: candidate?.shape || 'round',
-              capacity: candidate?.capacity || capacity,
-              positionX: candidate?.positionX || 18 + (index % 4) * 21,
-              positionY: candidate?.positionY || 24 + (Math.floor(index / 4) % 3) * 28
-            };
-          }),
-          floorPlan: selectedFloorPlan ? {
-            name: selectedFloorPlan.name,
-            type: selectedFloorPlan.type,
-            availableLocally: true,
-            candidateCount: selectedFloorPlan.candidates?.length || 0
-          } : {},
-          constraints: []
-        })
-      });
-      const run = await api(`/api/events/${event.id}/seating/plans/${created.plan.id}/run`, { method: 'POST', body: '{}' });
-      const data = await api(`/api/events/${event.id}/seating`);
-      renderPlan(run.plan, data.attendees);
-      showMessage('Draft generated. Review it before publishing.');
-    } catch (error) { showMessage(error.message, true); }
-  });
   const refresh = $('.seating-refresh', panel);
   if (refresh) refresh.addEventListener('click', load);
   $('.seating-seed', panel).addEventListener('click', async () => {
@@ -2043,6 +2102,35 @@ function setupSeating(event, card) {
       await load();
     } catch (error) { showMessage(error.message, true); }
   });
+  const createPlan = async (positionX, positionY) => {
+    const created = await api(`/api/events/${event.id}/seating/plans`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Seating plan',
+        tables: [{ name: 'Table 1', shape: 'round', capacity: 8, positionX, positionY }],
+        constraints: []
+      })
+    });
+    const data = await api(`/api/events/${event.id}/seating`);
+    renderPlan(created.plan, data.attendees);
+    showMessage('Table added to the seating plan.');
+  };
+  async function addTable(positionX, positionY) {
+    try {
+      const current = await api(`/api/events/${event.id}/seating`);
+      if (!current.plans[0]) {
+        await createPlan(positionX, positionY);
+        return;
+      }
+      const detail = await api(`/api/events/${event.id}/seating/plans/${current.plans[0].id}`);
+      const result = await api(`/api/events/${event.id}/seating/plans/${detail.plan.id}/tables`, {
+        method: 'POST',
+        body: JSON.stringify({ name: `Table ${detail.plan.tables.length + 1}`, capacity: 8, shape: 'round', positionX, positionY })
+      });
+      renderPlan(result.plan, current.attendees);
+      showMessage('Table added to the seating plan.');
+    } catch (error) { showMessage(error.message, true); }
+  }
   load();
 }
 

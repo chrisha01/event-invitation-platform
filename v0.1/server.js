@@ -726,7 +726,14 @@ function startupConfig(env = process.env) {
   if (typeof dbPath !== 'string' || !dbPath.trim() || dbPath === ':memory:') {
     throw new Error('GATHERLY_DB_PATH must be a writable SQLite file path.');
   }
-  return { host, port, dbPath };
+  const allowedOrigins = String(env.GATHERLY_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.some((origin) => !/^https?:\/\/[^/]+$/i.test(origin))) {
+    throw new Error('GATHERLY_ALLOWED_ORIGINS must contain comma-separated origins.');
+  }
+  return { host, port, dbPath, allowedOrigins };
 }
 
 function createApp(options = {}) {
@@ -736,6 +743,7 @@ function createApp(options = {}) {
   }
   const ownsStore = !options.store;
   const store = options.store || new Store(options.dbPath || DEFAULT_DB);
+  const allowedOrigins = new Set(options.allowedOrigins || []);
   const clock = options.clock || defaultClock;
   const limits = new Map();
   let closed = false;
@@ -786,7 +794,10 @@ function createApp(options = {}) {
     const origin = req.headers.origin;
     if (!origin) return;
     const hostHeader = req.headers.host;
-    if (!hostHeader || origin !== `${req.socket.encrypted ? 'https' : 'http'}://${hostHeader}`) {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const protocol = forwardedProto === 'https' || req.socket.encrypted ? 'https' : 'http';
+    const sameOrigin = hostHeader ? `${protocol}://${hostHeader}` : '';
+    if ((!allowedOrigins.has(origin) && origin !== sameOrigin)) {
       throw invalid('Cross-origin request rejected.', 403);
     }
   }
@@ -1247,6 +1258,25 @@ function createApp(options = {}) {
             }
             if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso(), shape, rotation)) {
               throw invalid('Seating table could not be updated.', 409);
+            }
+            return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
+          }
+          if (method === 'POST' && planAction === 'tables') {
+            const input = await bodyJson(req);
+            const [table] = validateSeatingTables([input]);
+            const attendees = store.seatingAttendees(eventId, hostRecord.id);
+            const tables = [...plan.tables, { ...table, name: table.name || `Table ${plan.tables.length + 1}` }];
+            const inputHash = generateSeatingDraft(attendees, tables, plan.constraints || [], plan.seed).inputHash;
+            if (!store.addSeatingTable(planId, eventId, hostRecord.id, table, inputHash, currentIso())) {
+              throw invalid('Seating table could not be added.', 409);
+            }
+            return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
+          }
+          if (method === 'DELETE' && planAction === 'tables') {
+            const input = await bodyJson(req);
+            const tableId = Number(input.tableId);
+            if (!Number.isSafeInteger(tableId) || !store.deleteSeatingTable(planId, eventId, hostRecord.id, tableId, currentIso())) {
+              throw invalid('Seating table could not be deleted.', 409);
             }
             return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
           }

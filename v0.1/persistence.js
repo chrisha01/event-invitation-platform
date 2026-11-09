@@ -1141,6 +1141,46 @@ class Store {
     });
   }
 
+  addSeatingTable(planId, eventId, hostId, table, inputHash, now) {
+    return this.transaction(() => {
+      const owned = this.db.prepare(
+        `SELECT p.id FROM seating_plans p JOIN events e ON e.id = p.event_id
+         WHERE p.id = ? AND p.event_id = ? AND e.host_id = ?`
+      ).get(planId, eventId, hostId);
+      if (!owned) return false;
+      const sortOrder = this.db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM seating_tables WHERE plan_id = ?'
+      ).get(planId).next;
+      this.db.prepare(
+        `INSERT INTO seating_tables
+         (plan_id, name, capacity, shape, rotation, position_x, position_y, initial_position_x, initial_position_y, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(planId, table.name, table.capacity, table.shape, table.rotation || 0,
+        table.positionX, table.positionY, table.positionX, table.positionY, sortOrder);
+      this.db.prepare(
+        `UPDATE seating_plans SET status = 'saved', input_hash = ?, updated_at = ? WHERE id = ?`
+      ).run(inputHash, now, planId);
+      return true;
+    });
+  }
+
+  deleteSeatingTable(planId, eventId, hostId, tableId, now) {
+    return this.transaction(() => {
+      const owned = this.db.prepare(
+        `SELECT p.id FROM seating_plans p JOIN events e ON e.id = p.event_id
+         WHERE p.id = ? AND p.event_id = ? AND e.host_id = ?`
+      ).get(planId, eventId, hostId);
+      if (!owned) return false;
+      const deleted = this.db.prepare(
+        'DELETE FROM seating_tables WHERE id = ? AND plan_id = ?'
+      ).run(tableId, planId).changes;
+      if (!deleted) return false;
+      this.db.prepare('UPDATE seating_plans SET status = ?, updated_at = ? WHERE id = ?')
+        .run('saved', now, planId);
+      return true;
+    });
+  }
+
   updateSeatingConstraints(planId, eventId, hostId, constraints, inputHash, now) {
     return this.transaction(() => {
       const owned = this.db.prepare(

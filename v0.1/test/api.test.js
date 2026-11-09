@@ -1237,6 +1237,27 @@ test('individual RSVP without named fields remains visible to seating', async (t
   assert.equal(attendees[0].name, 'Individual Seat');
 });
 
+test('deleting a seating table removes its assignments and returns the updated plan', async (t) => {
+  const f = await fixture(t);
+  const cookie = await f.register();
+  const event = await createEvent(f, cookie);
+  const created = await f.jsonRequest(`/api/events/${event.id}/seating/plans`, 'POST', {
+    name: 'Deletion plan',
+    tables: [{ name: 'Delete me', capacity: 2 }, { name: 'Keep me', capacity: 2 }]
+  }, cookie);
+  assert.equal(created.status, 201);
+  const createdPlan = (await created.json()).plan;
+  const deletedTableId = createdPlan.tables[0].id;
+
+  const deleted = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${createdPlan.id}/tables`, 'DELETE', {
+    tableId: deletedTableId
+  }, cookie);
+  assert.equal(deleted.status, 200);
+  const updatedPlan = (await deleted.json()).plan;
+  assert.equal(updatedPlan.tables.some((table) => table.id === deletedTableId), false);
+  assert.equal(updatedPlan.assignments.some((assignment) => assignment.tableId === deletedTableId), false);
+});
+
 test('seating assignment edits reject duplicates and over-capacity moves', async (t) => {
   const f = await fixture(t);
   const cookie = await f.register();
