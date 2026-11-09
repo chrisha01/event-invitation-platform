@@ -1125,6 +1125,13 @@ test('creates deterministic seating drafts, supports manual edits, publishes, an
   const firstPlan = (await firstRun.json()).plan;
   const secondRun = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/run`, 'POST', {}, cookie);
   assert.deepEqual((await secondRun.json()).plan.assignments, firstPlan.assignments);
+  const capacityUpdate = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/tables`, 'PUT', {
+    tableId: createdPlan.tables[0].id, capacity: 3, shape: 'rectangle'
+  }, cookie);
+  assert.equal(capacityUpdate.status, 200);
+  const capacityPlan = (await capacityUpdate.json()).plan;
+  assert.equal(capacityPlan.tables[0].capacity, 3);
+  assert.equal(capacityPlan.tables[0].shape, 'rectangle');
   assert.equal(firstPlan.payload.assignedCount, 3);
   assert.equal(firstPlan.payload.optimization.householdGroups, 1);
   assert.equal(firstPlan.payload.optimization.familiesKeptTogether, 0);

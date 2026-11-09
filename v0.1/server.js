@@ -1096,7 +1096,7 @@ function createApp(options = {}) {
         return json(res, 200, { messages: store.listOutbox(hostRecord.id) });
       }
 
-      const eventMatch = pathname.match(/^\/api\/events\/(\d+)(?:\/(guests(?:\/bulk)?|dashboard|responses|publish|status|messages|theme|invitation|invitation-copy|export|seating(?:\/seed|\/plans(?:\/\d+(?:\/(?:run|assignments|positions|venue-items|constraints|publish))?)?)?|check-in(?:\/reverse|\/walk-in)?))?$/);
+      const eventMatch = pathname.match(/^\/api\/events\/(\d+)(?:\/(guests(?:\/bulk)?|dashboard|responses|publish|status|messages|theme|invitation|invitation-copy|export|seating(?:\/seed|\/plans(?:\/\d+(?:\/(?:run|assignments|positions|tables|venue-items|constraints|publish))?)?)?|check-in(?:\/reverse|\/walk-in)?))?$/);
       if (eventMatch) {
         const eventId = Number(eventMatch[1]);
         if (!Number.isSafeInteger(eventId) || eventId < 1) throw invalid('Event not found.', 404);
@@ -1231,13 +1231,15 @@ function createApp(options = {}) {
             const input = await bodyJson(req);
             const tableId = Number(input.tableId);
             const capacity = Number(input.capacity);
+            const shape = ['round', 'rectangle', 'square', 'banquet'].includes(input.shape)
+              ? input.shape : null;
             const table = plan.tables.find((item) => Number(item.id) === tableId);
             if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
               throw invalid('Table chair count must be a whole number from 1 to 100.');
             }
             const assigned = plan.assignments.filter((item) => Number(item.tableId) === tableId).length;
             if (assigned > capacity) throw invalid('Remove guests from this table before reducing its chair count.', 409);
-            if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso())) {
+            if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso(), shape)) {
               throw invalid('Seating table could not be updated.', 409);
             }
             return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });

@@ -1119,7 +1119,7 @@ class Store {
     });
   }
 
-  updateSeatingTableCapacity(planId, eventId, hostId, tableId, capacity, now) {
+  updateSeatingTableCapacity(planId, eventId, hostId, tableId, capacity, now, shape = null) {
     return this.transaction(() => {
       const owned = this.db.prepare(
         `SELECT p.id FROM seating_plans p JOIN events e ON e.id = p.event_id
@@ -1131,8 +1131,8 @@ class Store {
       ).get(planId, tableId);
       if (Number(assigned.count) > capacity) return false;
       const changed = this.db.prepare(
-        'UPDATE seating_tables SET capacity = ? WHERE id = ? AND plan_id = ?'
-      ).run(capacity, tableId, planId).changes;
+        'UPDATE seating_tables SET capacity = ?, shape = COALESCE(?, shape) WHERE id = ? AND plan_id = ?'
+      ).run(capacity, shape, tableId, planId).changes;
       if (!changed) return false;
       this.db.prepare("UPDATE seating_plans SET status = 'stale', updated_at = ? WHERE id = ?").run(now, planId);
       return true;

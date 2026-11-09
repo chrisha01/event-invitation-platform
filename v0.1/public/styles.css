@@ -557,6 +557,22 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   box-shadow: 0 3px 8px #183c361f;
   transform: translateX(-50%);
 }
+.seating-table-controls label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: .65rem;
+  color: #52635c;
+}
+.seating-table-controls select {
+  min-height: 24px;
+  padding: 2px 3px;
+  font-size: .7rem;
+}
+.seating-table-controls label > div {
+  display: flex;
+  align-items: center;
+}
 .seating-table-controls button {
   min-width: 24px;
   min-height: 24px;

@@ -332,7 +332,7 @@ async function createHandler({ sql, env = process.env }) {
         JOIN events e ON e.id=g.event_id WHERE e.host_id=${current.id} ORDER BY m.id`;
       return response(200, { messages });
     }
-    const match = path.match(/^\/api\/events\/(\d+)(?:\/(dashboard|publish|responses|guests|guests\/bulk|theme|invitation|invitation-copy|export|status|messages|seating|seating\/seed|seating\/plans(?:\/\d+(?:\/(?:run|assignments|positions|venue-items|constraints|publish))?)?|check-in|check-in\/reverse|check-in\/walk-in))?$/);
+    const match = path.match(/^\/api\/events\/(\d+)(?:\/(dashboard|publish|responses|guests|guests\/bulk|theme|invitation|invitation-copy|export|status|messages|seating|seating\/seed|seating\/plans(?:\/\d+(?:\/(?:run|assignments|positions|tables|venue-items|constraints|publish))?)?|check-in|check-in\/reverse|check-in\/walk-in))?$/);
     if (match) {
       const eventId = Number(match[1]);
       const rows = await eventRows(current.id, eventId);
@@ -595,6 +595,22 @@ async function createHandler({ sql, env = process.env }) {
             payload_json=${JSON.stringify(result.payload)},updated_at=${now()} WHERE id=${planId} AND event_id=${eventId}`;
           return response(200, { plan: await planView(planId, eventId, current.id) });
         }
+        if (planAction === 'tables' && method === 'PUT') {
+          const tableId = Number(input.tableId);
+          const capacity = Number(input.capacity);
+          const shape = ['round', 'rectangle', 'square', 'banquet'].includes(input.shape) ? input.shape : null;
+          const table = plan.tables.find((item) => item.id === tableId);
+          if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
+            throw error('Table chair count must be a whole number from 1 to 100.');
+          }
+          const assigned = await query`SELECT COUNT(*)::int AS count FROM seating_assignments
+            WHERE plan_id=${planId} AND table_id=${tableId}`;
+          if (Number(assigned[0]?.count || 0) > capacity) throw error('Remove guests from this table before reducing its chair count.', 409);
+          await query`UPDATE seating_tables SET capacity=${capacity},shape=COALESCE(${shape},shape)
+            WHERE id=${tableId} AND plan_id=${planId}`;
+          await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;
+          return response(200, { plan: await planView(planId, eventId, current.id) });
+        }
         if (planAction === 'positions' && method === 'PUT') {
           if (!Array.isArray(input.positions) || !input.positions.length) throw error('Positions must be an array.');
           const positions = input.positions.map((p) => ({ tableId: Number(p?.tableId), positionX: Number(p?.positionX), positionY: Number(p?.positionY) }));
@@ -604,20 +620,6 @@ async function createHandler({ sql, env = process.env }) {
             !Number.isFinite(p.positionY) || p.positionY < 3 || p.positionY > 97) ||
             new Set(positions.map((p) => p.tableId)).size !== positions.length) {
             throw error('Table positions must stay within the seating map.');
-          }
-          if (planAction === 'tables' && method === 'PUT') {
-            const tableId = Number(input.tableId);
-            const capacity = Number(input.capacity);
-            const table = plan.tables.find((item) => item.id === tableId);
-            if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
-              throw error('Table chair count must be a whole number from 1 to 100.');
-            }
-            const assigned = await query`SELECT COUNT(*)::int AS count FROM seating_assignments
-              WHERE plan_id=${planId} AND table_id=${tableId}`;
-            if (Number(assigned[0]?.count || 0) > capacity) throw error('Remove guests from this table before reducing its chair count.', 409);
-            await query`UPDATE seating_tables SET capacity=${capacity} WHERE id=${tableId} AND plan_id=${planId}`;
-            await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;
-            return response(200, { plan: await planView(planId, eventId, current.id) });
           }
           for (const p of positions) await query`UPDATE seating_tables SET position_x=${p.positionX},
             position_y=${p.positionY} WHERE id=${p.tableId} AND plan_id=${planId}`;
