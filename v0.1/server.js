@@ -1143,7 +1143,7 @@ function createApp(options = {}) {
           return json(res, 200, { invitationCopy: updated.invitationCopy });
         }
         if (action === 'seating' || action.startsWith('seating/')) {
-          const planMatch = action.match(/^seating\/plans(?:\/(\d+)(?:\/(run|assignments|positions|venue-items|constraints|publish))?)?$/);
+          const planMatch = action.match(/^seating\/plans(?:\/(\d+)(?:\/(run|assignments|positions|tables|venue-items|constraints|publish))?)?$/);
           const planId = planMatch && planMatch[1] ? Number(planMatch[1]) : null;
           const planAction = planMatch ? planMatch[2] : null;
           if (method === 'GET' && action === 'seating') {
@@ -1227,6 +1227,21 @@ function createApp(options = {}) {
             }
             return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
           }
+          if (method === 'PUT' && planAction === 'tables') {
+            const input = await bodyJson(req);
+            const tableId = Number(input.tableId);
+            const capacity = Number(input.capacity);
+            const table = plan.tables.find((item) => Number(item.id) === tableId);
+            if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
+              throw invalid('Table chair count must be a whole number from 1 to 100.');
+            }
+            const assigned = plan.assignments.filter((item) => Number(item.tableId) === tableId).length;
+            if (assigned > capacity) throw invalid('Remove guests from this table before reducing its chair count.', 409);
+            if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso())) {
+              throw invalid('Seating table could not be updated.', 409);
+            }
+            return json(res, 200, { plan: store.getSeatingPlan(planId, eventId, hostRecord.id) });
+          }
           if (method === 'PUT' && planAction === 'assignments') {
             const input = await bodyJson(req);
             if (!Array.isArray(input.assignments)) throw invalid('Assignments must be an array.');
@@ -1239,16 +1254,23 @@ function createApp(options = {}) {
             const attendeeIds = new Set(attendees.map((attendee) => Number(attendee.id)));
             const tableIds = new Set(plan.tables.map((table) => Number(table.id)));
             const seen = new Set();
+            const seatKeys = new Set();
             const counts = new Map();
             const assignments = input.assignments.map((assignment) => {
               const attendeeId = Number(assignment?.attendeeId);
               const tableId = Number(assignment?.tableId);
-              if (!attendeeIds.has(attendeeId) || !tableIds.has(tableId) || seen.has(attendeeId)) {
-                throw invalid('Assignments must reference each eligible attendee once at most.');
+              const table = plan.tables.find((item) => Number(item.id) === tableId);
+              const seatIndexProvided = assignment?.seatIndex !== undefined;
+              let seatIndex = seatIndexProvided ? Number(assignment.seatIndex) : 0;
+              while (seatKeys.has(`${tableId}:${seatIndex}`)) seatIndex += 1;
+              if (!attendeeIds.has(attendeeId) || !tableIds.has(tableId) || seen.has(attendeeId) ||
+                  !Number.isSafeInteger(seatIndex) || seatIndex < 0 || (seatIndexProvided && seatIndex >= Number(table.capacity))) {
+                throw invalid('Assignments must reference valid chairs.');
               }
               seen.add(attendeeId);
+              seatKeys.add(`${tableId}:${seatIndex}`);
               counts.set(tableId, (counts.get(tableId) || 0) + 1);
-              return { attendeeId, tableId };
+              return { attendeeId, tableId, seatIndex };
             });
             for (const table of plan.tables) {
               if ((counts.get(Number(table.id)) || 0) > Number(table.capacity)) {

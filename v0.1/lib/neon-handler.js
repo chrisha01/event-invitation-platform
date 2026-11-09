@@ -234,7 +234,7 @@ async function createHandler({ sql, env = process.env }) {
     if (!rows[0]) return null;
     const tables = await query`SELECT id,name,capacity,shape,position_x,position_y,sort_order
       FROM seating_tables WHERE plan_id=${planId} ORDER BY sort_order,id`;
-    const assignments = await query`SELECT attendee_id,table_id FROM seating_assignments
+    const assignments = await query`SELECT attendee_id,table_id,seat_index FROM seating_assignments
       WHERE plan_id=${planId} ORDER BY attendee_id`;
     const constraints = await query`SELECT relationship_type,relationship,priority,attendee_ids_json
       FROM seating_constraints WHERE plan_id=${planId} ORDER BY id`;
@@ -245,7 +245,7 @@ async function createHandler({ sql, env = process.env }) {
       publishedAt: row.published_at, tables: tables.map((t) => ({ id: Number(t.id), name: t.name,
         capacity: Number(t.capacity), shape: t.shape, positionX: Number(t.position_x),
         positionY: Number(t.position_y), sortOrder: Number(t.sort_order) })),
-      assignments: assignments.map((a) => ({ attendeeId: Number(a.attendee_id), tableId: Number(a.table_id) })),
+      assignments: assignments.map((a) => ({ attendeeId: Number(a.attendee_id), tableId: Number(a.table_id), seatIndex: Number(a.seat_index || 0) })),
       venueItems: jsonValue(row.venue_items_json, []), floorPlan: jsonValue(row.floor_plan_json, {}),
       payload, ...payload, constraints: constraints.length ? constraints.map((c) => ({
         relationship: c.relationship || '', relationshipType: c.relationship_type,
@@ -539,7 +539,7 @@ async function createHandler({ sql, env = process.env }) {
         }
         return response(201, { created: selected.length, names: selected });
       }
-      const seatingMatch = match[2]?.match(/^seating\/plans(?:\/(\d+)(?:\/(run|assignments|positions|venue-items|constraints|publish))?)?$/);
+      const seatingMatch = match[2]?.match(/^seating\/plans(?:\/(\d+)(?:\/(run|assignments|positions|tables|venue-items|constraints|publish))?)?$/);
       if (seatingMatch) {
         const planId = seatingMatch[1] ? Number(seatingMatch[1]) : null;
         const planAction = seatingMatch[2] || null;
@@ -582,9 +582,14 @@ async function createHandler({ sql, env = process.env }) {
             payload: { ...generated.payload, assignedCount: 0,
               unassigned: attendees.map((a) => ({ attendeeId: Number(a.id), name: a.name })) } } : generated;
           await query`DELETE FROM seating_assignments WHERE plan_id=${planId}`;
+          const seatIndexes = new Map();
           for (const assignment of result.assignments) {
-            await query`INSERT INTO seating_assignments(plan_id,attendee_id,table_id)
-              VALUES(${planId},${assignment.attendeeId},${assignment.tableId})`;
+            const tableId = Number(assignment.tableId);
+            const seatIndex = Number.isSafeInteger(Number(assignment.seatIndex))
+              ? Number(assignment.seatIndex) : (seatIndexes.get(tableId) || 0);
+            seatIndexes.set(tableId, Math.max(seatIndexes.get(tableId) || 0, seatIndex + 1));
+            await query`INSERT INTO seating_assignments(plan_id,attendee_id,table_id,seat_index)
+              VALUES(${planId},${assignment.attendeeId},${tableId},${seatIndex})`;
           }
           await query`UPDATE seating_plans SET status='saved',score=${result.score},input_hash=${result.inputHash},
             payload_json=${JSON.stringify(result.payload)},updated_at=${now()} WHERE id=${planId} AND event_id=${eventId}`;
@@ -599,6 +604,20 @@ async function createHandler({ sql, env = process.env }) {
             !Number.isFinite(p.positionY) || p.positionY < 3 || p.positionY > 97) ||
             new Set(positions.map((p) => p.tableId)).size !== positions.length) {
             throw error('Table positions must stay within the seating map.');
+          }
+          if (planAction === 'tables' && method === 'PUT') {
+            const tableId = Number(input.tableId);
+            const capacity = Number(input.capacity);
+            const table = plan.tables.find((item) => item.id === tableId);
+            if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
+              throw error('Table chair count must be a whole number from 1 to 100.');
+            }
+            const assigned = await query`SELECT COUNT(*)::int AS count FROM seating_assignments
+              WHERE plan_id=${planId} AND table_id=${tableId}`;
+            if (Number(assigned[0]?.count || 0) > capacity) throw error('Remove guests from this table before reducing its chair count.', 409);
+            await query`UPDATE seating_tables SET capacity=${capacity} WHERE id=${tableId} AND plan_id=${planId}`;
+            await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;
+            return response(200, { plan: await planView(planId, eventId, current.id) });
           }
           for (const p of positions) await query`UPDATE seating_tables SET position_x=${p.positionX},
             position_y=${p.positionY} WHERE id=${p.tableId} AND plan_id=${planId}`;
@@ -629,15 +648,21 @@ async function createHandler({ sql, env = process.env }) {
           const attendees = await seatingAttendees(eventId, current.id);
           const attendeeIds = new Set(attendees.map((a) => a.id)), tableMap = new Map(plan.tables.map((t) => [t.id, t.capacity]));
           const seen = new Set(), counts = new Map();
+          const seatKeys = new Set();
           for (const item of input.assignments) {
             const attendeeId = Number(item?.attendeeId), tableId = Number(item?.tableId);
-            if (!attendeeIds.has(attendeeId) || !tableMap.has(tableId) || seen.has(attendeeId)) throw error('Assignments must reference each attendee at most once.');
-            seen.add(attendeeId); counts.set(tableId, (counts.get(tableId) || 0) + 1);
+            const seatIndexProvided = item?.seatIndex !== undefined;
+            let seatIndex = seatIndexProvided ? Number(item.seatIndex) : 0;
+            while (seatKeys.has(`${tableId}:${seatIndex}`)) seatIndex += 1;
+            if (!attendeeIds.has(attendeeId) || !tableMap.has(tableId) || seen.has(attendeeId) ||
+                !Number.isSafeInteger(seatIndex) || seatIndex < 0 || (seatIndexProvided && seatIndex >= Number(tableMap.get(tableId)))) throw error('Assignments must reference valid chairs.');
+            seen.add(attendeeId); seatKeys.add(`${tableId}:${seatIndex}`); counts.set(tableId, (counts.get(tableId) || 0) + 1);
+            item.seatIndex = seatIndex;
           }
           for (const [tableId, count] of counts) if (count > tableMap.get(tableId)) throw error('A table cannot hold more attendees than its capacity.');
           await query`DELETE FROM seating_assignments WHERE plan_id=${planId}`;
-          for (const item of input.assignments) await query`INSERT INTO seating_assignments(plan_id,attendee_id,table_id)
-            VALUES(${planId},${Number(item.attendeeId)},${Number(item.tableId)})`;
+          for (const item of input.assignments) await query`INSERT INTO seating_assignments(plan_id,attendee_id,table_id,seat_index)
+            VALUES(${planId},${Number(item.attendeeId)},${Number(item.tableId)},${Number(item.seatIndex || 0)})`;
           await query`UPDATE seating_plans SET status='saved',updated_at=${now()} WHERE id=${planId}`;
           return response(200, { plan: await planView(planId, eventId, current.id) });
         }

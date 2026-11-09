@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS seating_assignments (
   plan_id BIGINT NOT NULL REFERENCES seating_plans(id) ON DELETE CASCADE,
   attendee_id BIGINT NOT NULL REFERENCES rsvp_attendees(id) ON DELETE CASCADE,
   table_id BIGINT NOT NULL REFERENCES seating_tables(id) ON DELETE CASCADE,
+  seat_index INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (plan_id, attendee_id)
 );
 CREATE TABLE IF NOT EXISTS seating_constraints (

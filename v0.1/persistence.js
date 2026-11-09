@@ -279,6 +279,7 @@ class Store {
         plan_id INTEGER NOT NULL REFERENCES seating_plans(id) ON DELETE CASCADE,
         attendee_id INTEGER NOT NULL REFERENCES rsvp_attendees(id) ON DELETE CASCADE,
         table_id INTEGER NOT NULL REFERENCES seating_tables(id) ON DELETE CASCADE,
+        seat_index INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (plan_id, attendee_id),
         UNIQUE (plan_id, attendee_id, table_id)
       );
@@ -399,6 +400,10 @@ class Store {
     }
     if (!rsvpColumns.some((column) => column.name === 'contact_updates')) {
       this.db.exec('ALTER TABLE rsvps ADD COLUMN contact_updates INTEGER NOT NULL DEFAULT 0');
+    }
+    const assignmentColumns = this.db.prepare('PRAGMA table_info(seating_assignments)').all();
+    if (!assignmentColumns.some((column) => column.name === 'seat_index')) {
+      this.db.exec('ALTER TABLE seating_assignments ADD COLUMN seat_index INTEGER NOT NULL DEFAULT 0');
     }
     const seatingTableColumns = this.db.prepare('PRAGMA table_info(seating_tables)').all();
     const seatingConstraintColumns = this.db.prepare('PRAGMA table_info(seating_constraints)').all();
@@ -958,10 +963,11 @@ class Store {
       sortOrder: Number(table.sortOrder)
     }));
     const assignments = this.db.prepare(
-      `SELECT attendee_id AS attendeeId, table_id AS tableId
+      `SELECT attendee_id AS attendeeId, table_id AS tableId, seat_index AS seatIndex
        FROM seating_assignments WHERE plan_id = ? ORDER BY attendee_id`
     ).all(planId).map((assignment) => ({
-      attendeeId: Number(assignment.attendeeId), tableId: Number(assignment.tableId)
+      attendeeId: Number(assignment.attendeeId), tableId: Number(assignment.tableId),
+      seatIndex: Number(assignment.seatIndex || 0)
     }));
     let constraints = this.db.prepare(
       `SELECT relationship_type AS relationshipType, relationship, priority, attendee_ids_json AS attendeeIdsJson
@@ -1072,10 +1078,16 @@ class Store {
       ).run(status, result.score, result.inputHash, JSON.stringify(result.payload), now, planId);
       this.db.prepare('DELETE FROM seating_assignments WHERE plan_id = ?').run(planId);
       const insert = this.db.prepare(
-        'INSERT INTO seating_assignments (plan_id, attendee_id, table_id) VALUES (?, ?, ?)'
+        'INSERT INTO seating_assignments (plan_id, attendee_id, table_id, seat_index) VALUES (?, ?, ?, ?)'
       );
+      const seatIndexes = new Map();
       for (const assignment of result.assignments) {
-        insert.run(planId, assignment.attendeeId, assignment.tableId);
+        const tableId = Number(assignment.tableId);
+        const seatIndex = Number.isSafeInteger(Number(assignment.seatIndex))
+          ? Number(assignment.seatIndex)
+          : (seatIndexes.get(tableId) || 0);
+        seatIndexes.set(tableId, Math.max(seatIndexes.get(tableId) || 0, seatIndex + 1));
+        insert.run(planId, assignment.attendeeId, tableId, seatIndex);
       }
 
       return true;
@@ -1103,6 +1115,26 @@ class Store {
       );
       positions.forEach((position) => update.run(position.positionX, position.positionY, position.tableId, planId));
       this.db.prepare('UPDATE seating_plans SET updated_at = ? WHERE id = ?').run(now, planId);
+      return true;
+    });
+  }
+
+  updateSeatingTableCapacity(planId, eventId, hostId, tableId, capacity, now) {
+    return this.transaction(() => {
+      const owned = this.db.prepare(
+        `SELECT p.id FROM seating_plans p JOIN events e ON e.id = p.event_id
+         WHERE p.id = ? AND p.event_id = ? AND e.host_id = ?`
+      ).get(planId, eventId, hostId);
+      if (!owned) return false;
+      const assigned = this.db.prepare(
+        'SELECT COUNT(*) AS count FROM seating_assignments WHERE plan_id = ? AND table_id = ?'
+      ).get(planId, tableId);
+      if (Number(assigned.count) > capacity) return false;
+      const changed = this.db.prepare(
+        'UPDATE seating_tables SET capacity = ? WHERE id = ? AND plan_id = ?'
+      ).run(capacity, tableId, planId).changes;
+      if (!changed) return false;
+      this.db.prepare("UPDATE seating_plans SET status = 'stale', updated_at = ? WHERE id = ?").run(now, planId);
       return true;
     });
   }

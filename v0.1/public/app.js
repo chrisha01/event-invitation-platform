@@ -1547,20 +1547,31 @@ function setupSeating(event, card) {
     canvas.append(canvasHint);
     const assigned = new Map((plan.assignments || []).map((item) => [Number(item.attendeeId), Number(item.tableId)]));
     const unassigned = attendees.filter((attendee) => !assigned.has(Number(attendee.id)));
-    const persistAssignment = async (attendeeId, fromTableId, toTableId) => {
-      if (Number(fromTableId) === Number(toTableId)) return;
+    const persistAssignment = async (attendeeId, fromTableId, toTableId, seatIndex = null) => {
+      const current = (plan.assignments || []).find((assignment) => Number(assignment.attendeeId) === Number(attendeeId));
+      const targetGuests = (plan.assignments || []).filter((assignment) =>
+        Number(assignment.tableId) === Number(toTableId) && Number(assignment.attendeeId) !== Number(attendeeId));
+      const targetSeat = seatIndex === null
+        ? Array.from({ length: Number(plan.tables.find((table) => Number(table.id) === Number(toTableId))?.capacity || 0) },
+          (_, index) => index).find((index) => !targetGuests.some((assignment) => Number(assignment.seatIndex || 0) === index))
+        : Number(seatIndex);
+      if (targetSeat === undefined || targetGuests.some((assignment) => Number(assignment.seatIndex || 0) === targetSeat)) {
+        showMessage('That chair is already occupied.', true);
+        return;
+      }
+      if (current && Number(current.tableId) === Number(toTableId) && Number(current.seatIndex || 0) === targetSeat) return;
       const next = (plan.assignments || []).map((assignment) =>
         Number(assignment.attendeeId) === Number(attendeeId)
-          ? { ...assignment, tableId: Number(toTableId) } : assignment);
+          ? { ...assignment, tableId: Number(toTableId), seatIndex: targetSeat } : assignment);
       if (!next.some((assignment) => Number(assignment.attendeeId) === Number(attendeeId))) {
-        next.push({ attendeeId: Number(attendeeId), tableId: Number(toTableId) });
+        next.push({ attendeeId: Number(attendeeId), tableId: Number(toTableId), seatIndex: targetSeat });
       }
       try {
         const result = await api(`/api/events/${event.id}/seating/plans/${plan.id}/assignments`, {
           method: 'PUT', body: JSON.stringify({ assignments: next })
         });
         renderPlan(result.plan, attendees);
-        showMessage('Guest moved to the new table.');
+        showMessage(seatIndex === null ? 'Guest moved to the new table.' : 'Guest seated in the selected chair.');
       } catch (error) {
         showMessage(error.message, true);
       }
@@ -1619,11 +1630,51 @@ function setupSeating(event, card) {
       const tableCount = document.createElement('small');
       const tableGuests = attendees.filter((attendee) => assigned.get(Number(attendee.id)) === Number(table.id));
       tableCount.textContent = `${tableGuests.length}/${table.capacity}`;
+      const tableControls = document.createElement('div');
+      tableControls.className = 'seating-table-controls';
+      tableControls.hidden = true;
+      tableControls.innerHTML = '<button type="button" class="secondary" data-chair-adjust="-1" aria-label="Remove a chair">−</button><input type="number" min="1" max="100" aria-label="Number of chairs"><button type="button" class="secondary" data-chair-adjust="1" aria-label="Add a chair">+</button>';
+      const chairInput = tableControls.querySelector('input');
+      chairInput.value = table.capacity;
+      const saveCapacity = async () => {
+        const capacity = Number(chairInput.value);
+        if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) return;
+        try {
+          const result = await api(`/api/events/${event.id}/seating/plans/${plan.id}/tables`, {
+            method: 'PUT', body: JSON.stringify({ tableId: table.id, capacity })
+          });
+          renderPlan(result.plan, attendees);
+          showMessage('Table chairs updated.');
+        } catch (error) { showMessage(error.message, true); }
+      };
+      chairInput.addEventListener('change', saveCapacity);
+      tableControls.querySelectorAll('[data-chair-adjust]').forEach((button) => {
+        button.addEventListener('click', () => {
+          chairInput.value = Math.max(1, Math.min(100, Number(chairInput.value) + Number(button.dataset.chairAdjust)));
+          saveCapacity();
+        });
+      });
       tableSurface.append(tableLabel, tableCount);
+      tableSurface.addEventListener('click', (clickEvent) => {
+        clickEvent.stopPropagation();
+        tableControls.hidden = !tableControls.hidden;
+      });
       tableMap.append(tableSurface);
+      tableMap.append(tableControls);
+      const usedSeatIndexes = new Set();
+      const seatAssignments = new Map(tableGuests.map((attendee) => {
+        const assignment = (plan.assignments || []).find((item) => Number(item.attendeeId) === Number(attendee.id));
+        let seatIndex = Number(assignment?.seatIndex);
+        if (!Number.isSafeInteger(seatIndex) || seatIndex < 0 || usedSeatIndexes.has(seatIndex)) {
+          seatIndex = 0;
+          while (usedSeatIndexes.has(seatIndex) && seatIndex < Number(table.capacity)) seatIndex += 1;
+        }
+        usedSeatIndexes.add(seatIndex);
+        return [seatIndex, attendee];
+      }));
       for (let index = 0; index < table.capacity; index += 1) {
         const seat = document.createElement('span');
-        const attendee = tableGuests[index];
+        const attendee = seatAssignments.get(index);
         seat.className = `seating-map-seat${attendee ? '' : ' seating-map-seat--empty'}`;
         seat.style.setProperty('--seat-index', index);
         seat.style.setProperty('--seat-count', Math.max(Number(table.capacity), 1));
@@ -1644,6 +1695,21 @@ function setupSeating(event, card) {
             seat.classList.remove('is-dragging');
           });
         }
+        seat.addEventListener('dragover', (dragEvent) => {
+          if (dragEvent.dataTransfer?.types.includes('text/gatherly-attendee') && !attendee) {
+            dragEvent.preventDefault();
+            seat.classList.add('is-drop-target');
+          }
+        });
+        seat.addEventListener('dragleave', () => seat.classList.remove('is-drop-target'));
+        seat.addEventListener('drop', (dropEvent) => {
+          dropEvent.preventDefault();
+          seat.classList.remove('is-drop-target');
+          const payload = dropEvent.dataTransfer?.getData('text/gatherly-attendee');
+          if (!payload || attendee) return;
+          const [attendeeId, fromTableId] = payload.split(':');
+          persistAssignment(attendeeId, fromTableId, table.id, index);
+        });
         tableMap.append(seat);
       }
       mapLayer.append(tableMap);

@@ -1,0 +1,1 @@
+ALTER TABLE seating_assignments ADD COLUMN IF NOT EXISTS seat_index INTEGER NOT NULL DEFAULT 0;
