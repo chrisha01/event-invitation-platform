@@ -1125,6 +1125,20 @@ test('creates deterministic seating drafts, supports manual edits, publishes, an
   const firstPlan = (await firstRun.json()).plan;
   const secondRun = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/run`, 'POST', {}, cookie);
   assert.deepEqual((await secondRun.json()).plan.assignments, firstPlan.assignments);
+  const crowdedTable = firstPlan.tables
+    .map((table) => ({
+      table,
+      assignments: firstPlan.assignments.filter((assignment) => assignment.tableId === table.id)
+    }))
+    .find((entry) => entry.assignments.length > 1);
+  assert.ok(crowdedTable);
+  const reduced = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/tables`, 'PUT', {
+    tableId: crowdedTable.table.id, capacity: crowdedTable.assignments.length - 1
+  }, cookie);
+  assert.equal(reduced.status, 200);
+  const reducedPlan = (await reduced.json()).plan;
+  assert.equal(reducedPlan.assignments.filter((assignment) => assignment.tableId === crowdedTable.table.id).length,
+    crowdedTable.assignments.length - 1);
   const capacityUpdate = await f.jsonRequest(`/api/events/${event.id}/seating/plans/${planId}/tables`, 'PUT', {
     tableId: createdPlan.tables[0].id, capacity: 3, shape: 'rectangle'
   }, cookie);

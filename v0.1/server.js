@@ -1237,8 +1237,6 @@ function createApp(options = {}) {
             if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
               throw invalid('Table chair count must be a whole number from 1 to 100.');
             }
-            const assigned = plan.assignments.filter((item) => Number(item.tableId) === tableId).length;
-            if (assigned > capacity) throw invalid('Remove guests from this table before reducing its chair count.', 409);
             if (!store.updateSeatingTableCapacity(planId, eventId, hostRecord.id, tableId, capacity, currentIso(), shape)) {
               throw invalid('Seating table could not be updated.', 409);
             }

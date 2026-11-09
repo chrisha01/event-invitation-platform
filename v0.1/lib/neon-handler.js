@@ -603,9 +603,8 @@ async function createHandler({ sql, env = process.env }) {
           if (!table || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100) {
             throw error('Table chair count must be a whole number from 1 to 100.');
           }
-          const assigned = await query`SELECT COUNT(*)::int AS count FROM seating_assignments
-            WHERE plan_id=${planId} AND table_id=${tableId}`;
-          if (Number(assigned[0]?.count || 0) > capacity) throw error('Remove guests from this table before reducing its chair count.', 409);
+          await query`DELETE FROM seating_assignments
+            WHERE plan_id=${planId} AND table_id=${tableId} AND seat_index >= ${capacity}`;
           await query`UPDATE seating_tables SET capacity=${capacity},shape=COALESCE(${shape},shape)
             WHERE id=${tableId} AND plan_id=${planId}`;
           await query`UPDATE seating_plans SET status='stale',updated_at=${now()} WHERE id=${planId}`;

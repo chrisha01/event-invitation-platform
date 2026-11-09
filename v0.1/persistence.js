@@ -1126,10 +1126,9 @@ class Store {
          WHERE p.id = ? AND p.event_id = ? AND e.host_id = ?`
       ).get(planId, eventId, hostId);
       if (!owned) return false;
-      const assigned = this.db.prepare(
-        'SELECT COUNT(*) AS count FROM seating_assignments WHERE plan_id = ? AND table_id = ?'
-      ).get(planId, tableId);
-      if (Number(assigned.count) > capacity) return false;
+      this.db.prepare(
+        'DELETE FROM seating_assignments WHERE plan_id = ? AND table_id = ? AND seat_index >= ?'
+      ).run(planId, tableId, capacity);
       const changed = this.db.prepare(
         'UPDATE seating_tables SET capacity = ?, shape = COALESCE(?, shape) WHERE id = ? AND plan_id = ?'
       ).run(capacity, shape, tableId, planId).changes;
