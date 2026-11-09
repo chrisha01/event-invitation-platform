@@ -1962,12 +1962,13 @@ tbody tr:hover { background: #f8f7f2; }
   border-radius: 0;
 }
 .guest-table table { width: 100%; min-width: 0; table-layout: fixed; }
-.guest-table th:nth-child(1), .guest-table td:nth-child(1) { width: 19%; }
-.guest-table th:nth-child(2), .guest-table td:nth-child(2) { width: 22%; }
+.guest-table th:nth-child(1), .guest-table td:nth-child(1) { width: 16%; }
+.guest-table th:nth-child(2), .guest-table td:nth-child(2) { width: 18%; }
 .guest-table th:nth-child(3), .guest-table td:nth-child(3) { width: 13%; }
 .guest-table th:nth-child(4), .guest-table td:nth-child(4) { width: 11%; }
-.guest-table th:nth-child(5), .guest-table td:nth-child(5) { width: 15%; }
-.guest-table th:nth-child(6), .guest-table td:nth-child(6) { width: 20%; }
+.guest-table th:nth-child(5), .guest-table td:nth-child(5) { width: 9%; }
+.guest-table th:nth-child(6), .guest-table td:nth-child(6) { width: 13%; }
+.guest-table th:nth-child(7), .guest-table td:nth-child(7) { width: 20%; }
 .guest-table th { height: 36px; color: #62635c; background: #f8f7f2; font-size: 9px; }
 .guest-table th, .guest-table td { overflow-wrap: anywhere; word-break: break-word; }
 .guest-table td { min-height: 44px; }
