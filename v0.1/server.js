@@ -1007,6 +1007,8 @@ function createApp(options = {}) {
               partyLimit: Number(record.partyLimit),
               answer: record.answer || null,
                partySize: record.partySize === null ? null : Number(record.partySize),
+               contactPhone: record.contactPhone || '',
+               contactUpdates: Boolean(record.contactUpdates),
                attendees: Array.isArray(record.attendees) ? record.attendees : []
              },
              canRespond
@@ -1064,7 +1066,15 @@ function createApp(options = {}) {
          if (answer === 'yes' && record.guestMode === 'individual' && attendees.length === 0) {
            attendees.push({ name: record.name });
          }
-         store.saveRsvp(record.guestId, answer, input.partySize, currentIso(), attendees);
+         if (input.contactPhone !== undefined && typeof input.contactPhone !== 'string') {
+           throw invalid('Contact number is invalid.');
+         }
+         if (input.contactUpdates !== undefined && typeof input.contactUpdates !== 'boolean') {
+           throw invalid('Contact update preference is invalid.');
+         }
+         const contactPhone = typeof input.contactPhone === 'string' ? input.contactPhone.trim().slice(0, 40) : '';
+         store.saveRsvp(record.guestId, answer, input.partySize, currentIso(), attendees,
+           contactPhone, Boolean(input.contactUpdates) && Boolean(contactPhone));
          return json(res, 200, { ok: true });
       }
 
@@ -1378,18 +1388,19 @@ function createApp(options = {}) {
               ...item, checkedInAt: activeAttendeeCheckIns.get(Number(item.id)) || ''
             }));
             guest.checkedInAt = activeUnitCheckIns.get(Number(guest.id)) || '';
-            return [guest.name, guest.email, guest.answer || '', guest.partySize ?? '',
+            return [            guest.name, guest.email, guest.answer || '', guest.partySize ?? '',
               attendees.map((item) => item.name).filter(Boolean).join('; '),
               attendees.map((item) => item.dietary).filter(Boolean).join('; '),
               attendees.map((item) => item.accessibility).filter(Boolean).join('; '),
               attendees.map((item) => item.ageBand).join('; '), guest.revokedAt ? 'yes' : 'no',
               guest.updatedAt || '', guest.walkIn ? 'yes' : 'no', guest.checkedInAt || '',
-              attendees.map((item) => item.checkedInAt || '').join('; ')].map(csvCell).join(',');
+              attendees.map((item) => item.checkedInAt || '').join('; '),
+              guest.contactPhone || '', guest.contactUpdates ? 'yes' : 'no'].map(csvCell).join(',');
           });
           const csv = [
             ['Guest unit name', 'Email', 'RSVP answer', 'Party size', 'Attendee names',
               'Dietary needs', 'Accessibility needs', 'Age bands', 'Revoked state', 'Update time',
-              'Walk-in', 'Checked-in time', 'Attendee check-in times'].map(csvCell).join(','),
+              'Walk-in', 'Checked-in time', 'Attendee check-in times', 'Contact number', 'Updates consent'].map(csvCell).join(','),
             ...rows
           ].join('\r\n') + '\r\n';
           res.writeHead(200, {
@@ -1406,7 +1417,7 @@ function createApp(options = {}) {
           if (!name || name.length > 100) {
             throw invalid('Guest or household name must be 1–100 characters.');
           }
-          if (!validSyntheticEmail(email)) {
+          if (email && !validSyntheticEmail(email)) {
             throw invalid('Use a synthetic guest email at a reserved test domain, such as name@example.test.');
           }
           if (store.emailExists(eventId, email)) {
@@ -1425,7 +1436,7 @@ function createApp(options = {}) {
             tokenHash: sha256(token),
             inviteUrl
           }, {
-            recipient: email,
+            recipient: email || 'manual-link',
             subject: `Your invitation: ${event.title}`,
             body: `Hello ${name},\n\nYou are invited to ${event.title} on ${event.eventDate}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`
           }, createdAt));
@@ -1449,7 +1460,7 @@ function createApp(options = {}) {
             if (!name || name.length > 100) {
               throw invalid(`Guest row ${rowNumber}: name must be 1–100 characters.`);
             }
-            if (!validSyntheticEmail(email)) {
+            if (email && !validSyntheticEmail(email)) {
               throw invalid(`Guest row ${rowNumber}: use a synthetic email at a reserved test domain, such as name@example.test.`);
             }
             const partyLimit = event.guestMode === 'individual' ? 1 : row.partyLimit;
@@ -1464,7 +1475,7 @@ function createApp(options = {}) {
               inviteUrl,
               createdAt: currentIso(),
               message: {
-                recipient: email,
+                recipient: email || 'manual-link',
                 subject: `Your invitation: ${event.title}`,
                 body: `Hello ${name},\n\nYou are invited to ${event.title} on ${event.eventDate}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`
               }
@@ -1472,13 +1483,13 @@ function createApp(options = {}) {
           });
           const seen = new Set();
           for (const { guest } of entries) {
-            if (store.emailExists(eventId, guest.email)) {
+            if (guest.email && store.emailExists(eventId, guest.email)) {
               throw invalid(`A guest unit with that email is already invited to this event.`);
             }
-            if (seen.has(guest.email)) {
+            if (guest.email && seen.has(guest.email)) {
               throw invalid(`Duplicate email in guest list: ${guest.email}.`);
             }
-            seen.add(guest.email);
+            if (guest.email) seen.add(guest.email);
           }
           const ids = store.createGuestsAndOutbox(entries);
           return json(res, 201, {

@@ -161,6 +161,15 @@
                 <input name="partySize" type="number" min="1" inputmode="numeric" aria-describedby="party-limit-hint" required>
                 <small id="party-limit-hint" class="help"></small>
               </label>
+              <div class="rsvp-contact">
+                <label>Contact number (optional)
+                  <input name="contactPhone" type="tel" inputmode="tel" maxlength="40" autocomplete="tel">
+                </label>
+                <label><input name="contactUpdates" type="checkbox">
+                  I’m happy to receive event updates at this number.
+                </label>
+                <p class="help">Only used by the host for event updates. It won’t be shown publicly.</p>
+              </div>
               <fieldset class="rsvp-attendees" id="rsvp-attendees" hidden>
                 <legend>Who is coming?</legend>
                 <p class="help" id="attendee-help">Please list each person in your party.</p>

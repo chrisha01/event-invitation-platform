@@ -124,6 +124,7 @@ function guestView(row) {
     groupName: row.group_name || null, partyLimit: Number(row.party_limit),
     revokedAt: row.revoked_at || null, walkIn: Boolean(row.walk_in),
     answer: row.answer || null, partySize: row.party_size === null ? null : Number(row.party_size),
+    contactPhone: row.contact_phone || '', contactUpdates: Boolean(row.contact_updates),
     updatedAt: row.updated_at || null, inviteUrl: row.invite_url || null,
     attendees: row.attendees || []
   };
@@ -176,7 +177,7 @@ async function createHandler({ sql, env = process.env }) {
 
   async function guestsFor(eventId, hostId) {
     const rows = await query`SELECT g.id,g.event_id,g.name,g.email,g.party_limit,g.revoked_at,g.walk_in,
-      r.answer,r.party_size,r.updated_at,
+      r.answer,r.party_size,r.contact_phone,r.contact_updates,r.updated_at,
       COALESCE(jsonb_agg(jsonb_build_object('id',a.id,'name',a.name)
         ORDER BY a.id) FILTER (WHERE a.id IS NOT NULL),'[]'::jsonb) attendees
       FROM guest_units g JOIN events e ON e.id=g.event_id LEFT JOIN rsvps r ON r.guest_unit_id=g.id
@@ -420,15 +421,15 @@ async function createHandler({ sql, env = process.env }) {
         const name = typeof input.name === 'string' ? input.name.trim() : '';
         const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
         const partyLimit = rows[0].guest_mode === 'individual' ? 1 : Number(input.partyLimit);
-        if (!name || !validEmail(email) || !Number.isInteger(partyLimit) || partyLimit < 1 || partyLimit > 20) {
+        if (!name || (email && !validEmail(email)) || !Number.isInteger(partyLimit) || partyLimit < 1 || partyLimit > 20) {
           throw error('Guest details are invalid.');
         }
         const token = crypto.randomBytes(32).toString('base64url');
         const inviteUrl = `/rsvp/${token}`;
         const inserted = await query`INSERT INTO guest_units(event_id,name,email,party_limit,token_hash,invite_url,created_at)
-          VALUES(${eventId},${name},${email},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
+          VALUES(${eventId},${name},${email || null},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
         await query`INSERT INTO email_outbox(guest_unit_id,recipient,subject,body,created_at)
-          VALUES(${inserted[0].id},${email},${`Your invitation: ${rows[0].title}`},
+          VALUES(${inserted[0].id},${email || 'manual-link'},${`Your invitation: ${rows[0].title}`},
           ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${dateColumn(rows[0].event_date)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
         return response(201, { guest: { id: Number(inserted[0].id), name, email, partyLimit }, inviteUrl });
       }
@@ -442,13 +443,15 @@ async function createHandler({ sql, env = process.env }) {
           const name = typeof row?.name === 'string' ? row.name.trim() : '';
           const email = typeof row?.email === 'string' ? row.email.trim().toLowerCase() : '';
           const partyLimit = rows[0].guest_mode === 'individual' ? 1 : Number(row?.partyLimit);
-          if (!name || !validEmail(email) || !Number.isInteger(partyLimit) || partyLimit < 1 || partyLimit > 20) {
+          if (!name || (email && !validEmail(email)) || !Number.isInteger(partyLimit) || partyLimit < 1 || partyLimit > 20) {
             throw error('Guest details are invalid.');
           }
-          if (seenEmails.has(email)) throw error(`Duplicate email in guest list: ${email}.`);
-          const existing = await query`SELECT id FROM guest_units WHERE event_id=${eventId} AND lower(email)=${email} AND revoked_at IS NULL`;
-          if (existing.length) throw error('A guest unit with that email is already invited to this event.');
-          seenEmails.add(email);
+          if (email && seenEmails.has(email)) throw error(`Duplicate email in guest list: ${email}.`);
+          if (email) {
+            const existing = await query`SELECT id FROM guest_units WHERE event_id=${eventId} AND lower(email)=${email} AND revoked_at IS NULL`;
+            if (existing.length) throw error('A guest unit with that email is already invited to this event.');
+            seenEmails.add(email);
+          }
           normalized.push({ name, email, partyLimit });
         }
         const created = [];
@@ -457,9 +460,9 @@ async function createHandler({ sql, env = process.env }) {
           const token = crypto.randomBytes(32).toString('base64url');
           const inviteUrl = `/rsvp/${token}`;
           const inserted = await query`INSERT INTO guest_units(event_id,name,email,party_limit,token_hash,invite_url,created_at)
-            VALUES(${eventId},${name},${email},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
+            VALUES(${eventId},${name},${email || null},${partyLimit},${sha256(token)},${inviteUrl},${now()}) RETURNING id`;
           await query`INSERT INTO email_outbox(guest_unit_id,recipient,subject,body,created_at)
-            VALUES(${inserted[0].id},${email},${`Your invitation: ${rows[0].title}`},
+            VALUES(${inserted[0].id},${email || 'manual-link'},${`Your invitation: ${rows[0].title}`},
             ${`Hello ${name}\n\nYou are invited to ${rows[0].title} on ${dateColumn(rows[0].event_date)}.\nRSVP using your private local link: ${inviteUrl}\n\nLocal email capture only. No email was sent.`},${now()})`;
           created.push({ id: Number(inserted[0].id), name, email, partyLimit, inviteUrl });
         }
@@ -473,16 +476,17 @@ async function createHandler({ sql, env = process.env }) {
         const attendeeTimes = new Map(checkIns.filter((c) => c.attendee_id).map((c) => [Number(c.attendee_id), c.checked_in_at]));
         const csvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
         const csv = [
-          ['Guest unit name', 'Email', 'RSVP answer', 'Party size', 'Attendee names',
+          [          'Guest unit name', 'Email', 'RSVP answer', 'Party size', 'Attendee names',
             'Dietary needs', 'Accessibility needs', 'Age bands', 'Revoked state', 'Update time',
-            'Walk-in', 'Checked-in time', 'Attendee check-in times'].map(csvCell).join(','),
+            'Walk-in', 'Checked-in time', 'Attendee check-in times', 'Contact number', 'Updates consent'].map(csvCell).join(','),
           ...guests.map((guest) => [guest.name, guest.email || '', guest.answer || '', guest.partySize ?? '',
             (guest.attendees || []).map((a) => a.name).join('; '),
             (guest.attendees || []).map((a) => a.dietary || '').filter(Boolean).join('; '),
             (guest.attendees || []).map((a) => a.accessibility || '').filter(Boolean).join('; '),
             (guest.attendees || []).map((a) => a.ageBand || 'adult').join('; '), guest.revokedAt ? 'yes' : 'no',
             guest.updatedAt || '', guest.walkIn ? 'yes' : 'no', unitTimes.get(guest.id) || '',
-            (guest.attendees || []).map((a) => attendeeTimes.get(Number(a.id)) || '').join('; ')].map(csvCell).join(','))
+            (guest.attendees || []).map((a) => attendeeTimes.get(Number(a.id)) || '').join('; '),
+            guest.contactPhone || '', guest.contactUpdates ? 'yes' : 'no'].map(csvCell).join(','))
         ].join('\r\n') + '\r\n';
         return { statusCode: 200, headers: {
           'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="gatherly-event-${eventId}-guests.csv"`, 'cache-control': 'no-store'
@@ -768,7 +772,9 @@ async function createHandler({ sql, env = process.env }) {
         theme: guest.theme_json || {}, invitationSettings: guest.invitation_settings_json || {},
         invitationCopy: guest.invitation_copy_json || {}
       }, guest: { name: guest.name, partyLimit: Number(guest.party_limit), answer: guest.answer || null,
-        partySize: guest.party_size === null ? null : Number(guest.party_size), attendees: guest.attendees || [] },
+        partySize: guest.party_size === null ? null : Number(guest.party_size),
+        contactPhone: guest.contact_phone || '', contactUpdates: Boolean(guest.contact_updates),
+        attendees: guest.attendees || [] },
       canRespond });
       if (method === 'PUT') {
         if (guest.status === 'cancelled') throw error('Cancelled events cannot accept RSVP changes.', 409);
@@ -787,10 +793,14 @@ async function createHandler({ sql, env = process.env }) {
         if (!['yes', 'no', 'maybe'].includes(input.answer) || !Number.isInteger(input.partySize) ||
             input.partySize < 0 || input.partySize > Number(guest.party_limit)) throw error('RSVP details are invalid.');
         if (input.answer === 'yes' && input.partySize < 1) throw error('A yes RSVP needs at least one attendee.');
-        const rsvp = await query`INSERT INTO rsvps(guest_unit_id,answer,party_size,updated_at)
-          VALUES(${guest.id},${input.answer},${input.partySize},${now()})
+        const contactPhone = typeof input.contactPhone === 'string' ? input.contactPhone.trim().slice(0, 40) : '';
+        if (input.contactPhone !== undefined && typeof input.contactPhone !== 'string') throw error('Contact number is invalid.');
+        if (input.contactUpdates !== undefined && typeof input.contactUpdates !== 'boolean') throw error('Contact update preference is invalid.');
+        const rsvp = await query`INSERT INTO rsvps(guest_unit_id,answer,party_size,contact_phone,contact_updates,updated_at)
+          VALUES(${guest.id},${input.answer},${input.partySize},${contactPhone || null},${Boolean(input.contactUpdates) && Boolean(contactPhone)},${now()})
           ON CONFLICT(guest_unit_id) DO UPDATE SET answer=EXCLUDED.answer,
-          party_size=EXCLUDED.party_size,updated_at=EXCLUDED.updated_at RETURNING id`;
+          party_size=EXCLUDED.party_size,contact_phone=EXCLUDED.contact_phone,
+          contact_updates=EXCLUDED.contact_updates,updated_at=EXCLUDED.updated_at RETURNING id`;
         await query`DELETE FROM rsvp_attendees WHERE guest_unit_id=${guest.id}`;
         const attendees = Array.isArray(input.attendees) ? input.attendees.slice(0, 20) : [];
         if (input.answer === 'yes' && guest.guest_mode === 'individual' && attendees.length === 0) {

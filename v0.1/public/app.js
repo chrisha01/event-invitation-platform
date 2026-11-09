@@ -2381,7 +2381,7 @@ async function renderDashboard(event, card) {
     return;
   }
   const table = document.createElement('table');
-  table.innerHTML = '<thead><tr><th scope="col">GUEST UNIT</th><th scope="col">EMAIL</th><th scope="col">RESPONSE</th><th scope="col">PARTY SIZE</th><th scope="col">ATTENDEES</th><th scope="col">ACTION</th></tr></thead><tbody></tbody>';
+  table.innerHTML = '<thead><tr><th scope="col">GUEST UNIT</th><th scope="col">EMAIL</th><th scope="col">CONTACT</th><th scope="col">RESPONSE</th><th scope="col">PARTY SIZE</th><th scope="col">ATTENDEES</th><th scope="col">ACTION</th></tr></thead><tbody></tbody>';
   const tbody = $('tbody', table);
   for (const guest of guests) {
     const attendeeCount = Array.isArray(guest.attendees) ? guest.attendees.filter((a) => a.name.trim()).length : 0;
@@ -2389,6 +2389,7 @@ async function renderDashboard(event, card) {
     for (const [label, value] of [
       ['Guest unit', guest.name],
       ['Email', guest.email],
+      ['Contact', guest.contactPhone ? `${guest.contactPhone}${guest.contactUpdates ? ' (updates)' : ''}` : '—'],
       ['Response', guest.revokedAt ? 'Revoked' : guest.answer || 'No reply'],
       ['Party size', guest.partySize ?? '—'],
       ['Attendees', attendeeCount > 0 ? `${attendeeCount} named` : '—']
@@ -2555,7 +2556,7 @@ function showGuestForm(event, card) {
   slot.composerMode = 'single';
   single.setAttribute('aria-expanded', 'true');
   bulk.setAttribute('aria-expanded', 'false');
-  slot.innerHTML = `<form class="guest-form notice"><div class="guest-composer__heading"><strong>Single invite</strong><button type="button" class="secondary guest-composer-close">Close</button></div><label>${event.guestMode === 'household' ? 'Household / group name' : 'Guest name'}<input name="name" maxlength="100" required></label><label>Guest email (synthetic only)<input name="email" type="email" maxlength="254" required></label>${event.guestMode === 'household' ? '<label>Maximum party size<input name="partyLimit" type="number" min="1" max="20" required></label>' : ''}<button>Create unit + capture invitation</button><div class="invite-result" role="status" aria-live="polite"></div></form>`;
+  slot.innerHTML = `<form class="guest-form notice"><div class="guest-composer__heading"><strong>Single invite</strong><button type="button" class="secondary guest-composer-close">Close</button></div><label>${event.guestMode === 'household' ? 'Household / group name' : 'Guest name'}<input name="name" maxlength="100" required></label><label>Guest email (optional)<input name="email" type="email" maxlength="254"></label><p class="help">Leave blank to share the private invitation link manually.</p>${event.guestMode === 'household' ? '<label>Maximum party size<input name="partyLimit" type="number" min="1" max="20" required></label>' : ''}<button>Create unit + capture invitation</button><div class="invite-result" role="status" aria-live="polite"></div></form>`;
   $('.guest-composer-close', slot).addEventListener('click', () => closeGuestComposer(card));
   const form = $('.guest-form', slot);
   form.querySelector('input[name="name"]').focus();
@@ -2884,6 +2885,8 @@ async function showGuest(rsvpToken) {
     const partyLimit = Number(data.guest.partyLimit);
     partySize.max = partyLimit;
     partySize.value = data.guest.partySize ?? 1;
+    form.elements.contactPhone.value = data.guest.contactPhone || '';
+    form.elements.contactUpdates.checked = Boolean(data.guest.contactUpdates);
     $('#guest-capacity').textContent = `You can include up to ${partyLimit} ${partyLimit === 1 ? 'person' : 'people'} in your reply.`;
     $('#party-limit-hint').textContent = `Up to ${partyLimit} ${partyLimit === 1 ? 'person' : 'people'} on this invitation.`;
     if (data.guest.answer) form.elements.answer.value = data.guest.answer;
@@ -3014,6 +3017,8 @@ async function showGuest(rsvpToken) {
         attendees.push({ name: data.guest.name, dietary: '', accessibility: '', ageBand: 'adult' });
       }
       values.attendees = attendees;
+      values.contactPhone = String(values.contactPhone || '').trim();
+      values.contactUpdates = Boolean(values.contactUpdates) && Boolean(values.contactPhone);
       const submit = form.querySelector('button[type="submit"]');
       if (submit) submit.disabled = true;
       try {

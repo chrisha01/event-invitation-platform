@@ -193,7 +193,7 @@ class Store {
         id INTEGER PRIMARY KEY,
         event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
         name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
-        email TEXT NOT NULL,
+        email TEXT,
         party_limit INTEGER NOT NULL CHECK (party_limit BETWEEN 1 AND 20),
         token_hash TEXT NOT NULL UNIQUE,
         invite_url TEXT NOT NULL,
@@ -207,6 +207,8 @@ class Store {
         guest_unit_id INTEGER NOT NULL UNIQUE REFERENCES guest_units(id) ON DELETE CASCADE,
         answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'maybe')),
         party_size INTEGER NOT NULL CHECK (party_size BETWEEN 0 AND 20),
+        contact_phone TEXT,
+        contact_updates INTEGER NOT NULL DEFAULT 0 CHECK (contact_updates IN (0, 1)),
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS rsvp_attendees (
@@ -354,6 +356,33 @@ class Store {
       this.db.exec('ALTER TABLE events ADD COLUMN replacement_event_timezone TEXT');
     }
     const guestColumns = this.db.prepare('PRAGMA table_info(guest_units)').all();
+    const emailColumn = guestColumns.find((column) => column.name === 'email');
+    if (emailColumn && Number(emailColumn.notnull) === 1) {
+      this.db.exec(`
+        PRAGMA foreign_keys = OFF;
+        PRAGMA legacy_alter_table = ON;
+        ALTER TABLE guest_units RENAME TO guest_units_legacy;
+        CREATE TABLE guest_units (
+          id INTEGER PRIMARY KEY,
+          event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+          email TEXT,
+          party_limit INTEGER NOT NULL CHECK (party_limit BETWEEN 1 AND 20),
+          token_hash TEXT NOT NULL UNIQUE,
+          invite_url TEXT NOT NULL,
+          revoked_at TEXT,
+          walk_in INTEGER NOT NULL DEFAULT 0 CHECK (walk_in IN (0, 1)),
+          created_at TEXT NOT NULL,
+          UNIQUE(event_id, email)
+        );
+        INSERT INTO guest_units (id,event_id,name,email,party_limit,token_hash,invite_url,revoked_at,walk_in,created_at)
+          SELECT id,event_id,name,email,party_limit,token_hash,invite_url,revoked_at,walk_in,created_at
+          FROM guest_units_legacy;
+        DROP TABLE guest_units_legacy;
+        PRAGMA legacy_alter_table = OFF;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
     if (!guestColumns.some((column) => column.name === 'invite_url')) {
       this.db.exec('ALTER TABLE guest_units ADD COLUMN invite_url TEXT NOT NULL DEFAULT ""');
     }
@@ -363,6 +392,13 @@ class Store {
     }
     if (!guestColumns.some((column) => column.name === 'walk_in')) {
       this.db.exec('ALTER TABLE guest_units ADD COLUMN walk_in INTEGER NOT NULL DEFAULT 0');
+    }
+    const rsvpColumns = this.db.prepare('PRAGMA table_info(rsvps)').all();
+    if (!rsvpColumns.some((column) => column.name === 'contact_phone')) {
+      this.db.exec('ALTER TABLE rsvps ADD COLUMN contact_phone TEXT');
+    }
+    if (!rsvpColumns.some((column) => column.name === 'contact_updates')) {
+      this.db.exec('ALTER TABLE rsvps ADD COLUMN contact_updates INTEGER NOT NULL DEFAULT 0');
     }
     const seatingTableColumns = this.db.prepare('PRAGMA table_info(seating_tables)').all();
     const seatingConstraintColumns = this.db.prepare('PRAGMA table_info(seating_constraints)').all();
@@ -657,7 +693,7 @@ class Store {
       );
       return entries.map(({ guest, message, createdAt }) => {
         const inserted = insertGuest.run(
-          guest.eventId, guest.name, guest.email, guest.partyLimit,
+          guest.eventId, guest.name, guest.email || null, guest.partyLimit,
           guest.tokenHash, guest.inviteUrl, createdAt
         );
         const id = Number(inserted.lastInsertRowid);
@@ -671,7 +707,8 @@ class Store {
     return this.db.prepare(
       `SELECT g.id, g.name, g.email, g.party_limit AS partyLimit,
               g.revoked_at AS revokedAt, g.walk_in AS walkIn,
-              r.answer, r.party_size AS partySize,
+              r.answer, r.party_size AS partySize, r.contact_phone AS contactPhone,
+              r.contact_updates AS contactUpdates,
               r.updated_at AS updatedAt
        FROM guest_units g JOIN events e ON e.id = g.event_id
        LEFT JOIN rsvps r ON r.guest_unit_id = g.id
@@ -720,6 +757,7 @@ class Store {
   }
 
   emailExists(eventId, email) {
+    if (!email) return false;
     return Boolean(this.db.prepare(
       'SELECT 1 FROM guest_units WHERE event_id = ? AND email = ?'
     ).get(eventId, email));
@@ -769,7 +807,8 @@ class Store {
               e.theme_json AS themeJson,
               e.invitation_settings_json AS invitationSettingsJson,
               e.invitation_copy_json AS invitationCopyJson,
-              r.answer, r.party_size AS partySize, r.updated_at AS updatedAt
+              r.answer, r.party_size AS partySize, r.contact_phone AS contactPhone,
+              r.contact_updates AS contactUpdates, r.updated_at AS updatedAt
        FROM guest_units g JOIN events e ON e.id = g.event_id
        LEFT JOIN rsvps r ON r.guest_unit_id = g.id
        WHERE g.token_hash = ?`
@@ -785,7 +824,7 @@ class Store {
     };
   }
 
-  saveRsvp(guestId, answer, partySize, updatedAt, attendees = []) {
+  saveRsvp(guestId, answer, partySize, updatedAt, attendees = [], contactPhone = '', contactUpdates = false) {
     return this.transaction(() => {
       const guest = this.db.prepare(
         'SELECT id, event_id AS eventId FROM guest_units WHERE id = ?'
@@ -815,12 +854,13 @@ class Store {
         }
       }
       this.db.prepare(
-        `INSERT INTO rsvps (guest_unit_id, answer, party_size, updated_at)
-         VALUES (?, ?, ?, ?)
+        `INSERT INTO rsvps (guest_unit_id, answer, party_size, contact_phone, contact_updates, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(guest_unit_id) DO UPDATE SET
            answer = excluded.answer, party_size = excluded.party_size,
+           contact_phone = excluded.contact_phone, contact_updates = excluded.contact_updates,
            updated_at = excluded.updated_at`
-      ).run(guestId, answer, partySize, updatedAt);
+      ).run(guestId, answer, partySize, contactPhone || null, contactUpdates ? 1 : 0, updatedAt);
       // Replace attendee details for this guest unit.
       this.db.prepare('DELETE FROM rsvp_attendees WHERE guest_unit_id = ?').run(guestId);
       const insert = this.db.prepare(
